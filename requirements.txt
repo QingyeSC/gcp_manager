@@ -1,0 +1,87 @@
+# Web框架
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# HTTP请求库
+requests==2.31.0
+
+# MySQL数据库驱动
+mysql-connector-python==8.1.0
+PyMySQL==1.1.0
+
+# Redis缓存
+redis==4.6.0
+
+# 数据处理
+pandas==2.1.1
+
+# 日期时间处理
+python-dateutil==2.8.2
+
+# 路径处理
+pathlib2==2.3.7
+
+# 配置管理
+python-dotenv==1.0.0
+
+# 日志处理
+colorlog==6.7.0
+
+# 系统监控
+psutil==5.9.5
+
+# 任务调度
+APScheduler==3.10.4
+
+# 并发处理
+concurrent-futures==3.1.1
+
+# JSON处理
+jsonschema==4.19.0
+
+# 文件监控
+watchdog==3.0.0
+
+# 加密和安全
+cryptography==41.0.4
+bcrypt==4.0.1
+
+# 环境变量管理
+environs==9.5.0
+
+# HTTP客户端增强
+httpx==0.24.1
+
+# 模板引擎增强
+Jinja2==3.1.2
+
+# 表单处理
+WTForms==3.0.1
+Flask-WTF==1.1.1
+
+# 会话管理
+Flask-Session==0.5.0
+
+# 限流
+Flask-Limiter==3.5.0
+
+# CORS支持
+Flask-CORS==4.0.0
+
+# 健康检查
+Flask-HealthCheck==1.0.2
+
+# 可选：通知功能
+# python-telegram-bot==20.5  # Telegram通知
+# slack-sdk==3.22.0          # Slack通知
+
+# 可选：数据导出
+# openpyxl==3.1.2            # Excel导出
+# reportlab==4.0.4           # PDF导出
+
+# 开发工具 (仅开发环境)
+# pytest==7.4.2
+# pytest-cov==4.1.0
+# black==23.7.0
+# flake8==6.0.0
+# mypy==1.5.1

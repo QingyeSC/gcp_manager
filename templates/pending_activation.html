@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待激活账号管理 - GCP账号管理面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <style>
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .checkbox-wrapper {
+            position: relative;
+        }
+        .checkbox-wrapper input[type="checkbox"] {
+            opacity: 0;
+            position: absolute;
+        }
+        .checkbox-wrapper label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+        .checkbox-wrapper .checkbox-custom {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #d1d5db;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 8px;
+            transition: all 0.2s;
+        }
+        .checkbox-wrapper input[type="checkbox"]:checked + label .checkbox-custom {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .checkbox-wrapper input[type="checkbox"]:checked + label .checkbox-custom::after {
+            content: '✓';
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- 导航栏 -->
+    <nav class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="text-white hover:text-gray-200 mr-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                    </a>
+                    <h1 class="text-white text-xl font-bold">待激活账号管理</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="window.location.reload()" class="text-white hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                        刷新
+                    </button>
+                    <span class="text-white text-sm">
+                        待激活: <span id="pendingCount">{{ accounts|length }}</span> 个账号组
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto py-6 px-4">
+        <!-- 操作工具栏 -->
+        <div class="bg-white rounded-lg shadow mb-6 p-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-center space-x-4 mb-4 sm:mb-0">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="selectAll">
+                        <label for="selectAll">
+                            <div class="checkbox-custom"></div>
+                            <span class="text-sm font-medium text-gray-700">全选</span>
+                        </label>
+                    </div>
+                    <span class="text-sm text-gray-500" id="selectedCount">已选择 0 个账号组</span>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="activateSelected()" id="activateBtn" class="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200" disabled>
+                        批量激活选中账号
+                    </button>
+                    <button onclick="refreshAccountList()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200">
+                        刷新列表
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提示信息 -->
+        {% if accounts|length == 0 %}
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+            <svg class="w-12 h-12 text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <h3 class="text-lg font-medium text-blue-900 mb-2">暂无待激活账号</h3>
+            <p class="text-blue-700">所有账号都在正常运行中，无需激活操作。</p>
+        </div>
+        {% else %}
+        <!-- 使用说明 -->
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div class="flex">
+                <svg class="w-5 h-5 text-yellow-400 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                </svg>
+                <div>
+                    <h4 class="text-sm font-medium text-yellow-800">操作说明</h4>
+                    <p class="text-sm text-yellow-700 mt-1">
+                        以下账号的300刀赠金已用完，请手动登录GCP控制台激活额外的100刀额度，然后在此页面确认激活。
+                        激活后的账号文件将重命名为 xxx-actived.json 并移动到激活池中。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 账号列表 -->
+        <div class="space-y-4" id="accountList">
+            {% for account in accounts %}
+            <div class="bg-white rounded-lg shadow card-hover" data-account="{{ account.prefix }}">
+                <div class="p-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="checkbox-wrapper">
+                                <input type="checkbox" id="account_{{ loop.index }}" class="account-checkbox" value="{{ account.prefix }}">
+                                <label for="account_{{ loop.index }}">
+                                    <div class="checkbox-custom"></div>
+                                </label>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-lg font-medium text-gray-900">{{ account.prefix }}</h3>
+                                <p class="text-sm text-gray-500">{{ account.file_count }} 个服务账号 • 总使用额度: {{ account.quota_formatted }}</p>
+                                {% if account.last_updated %}
+                                <p class="text-xs text-gray-400">最后更新: {{ account.last_updated }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="text-right">
+                                <div class="flex items-center">
+                                    <span class="inline-block w-3 h-3 bg-red-500 rounded-full mr-2"></span>
+                                    <span class="text-sm font-medium text-red-600">300刀已用完</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">等待激活100刀额度</p>
+                            </div>
+                            <button onclick="activateSingle('{{ account.prefix }}')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200">
+                                激活
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 文件详情 -->
+                    <div class="mt-4 pt-4 border-t border-gray-200">
+                        <h4 class="text-sm font-medium text-gray-700 mb-2">包含文件:</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            {% for file in account.files %}
+                            <div class="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+                                <span class="text-sm text-gray-600">{{ file.file }}</span>
+                                <span class="text-xs text-gray-400">{{ (file.size / 1024) | round(1) }}KB</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 确认对话框 -->
+    <div id="confirmModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <svg class="w-12 h-12 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h3 class="text-lg font-medium text-gray-900" id="confirmTitle">确认激活账号</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500" id="confirmMessage">
+                        您确定要激活选中的账号吗？激活后将移动到激活池中。
+                    </p>
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
+                        <p class="text-xs text-yellow-700">
+                            <strong>注意:</strong> 请确保您已经在GCP控制台中手动激活了这些账号的100刀额度。
+                        </p>
+                    </div>
+                </div>
+                <div class="flex justify-center space-x-3 mt-4">
+                    <button onclick="closeConfirmModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md text-sm font-medium transition duration-200">
+                        取消
+                    </button>
+                    <button onclick="confirmActivation()" id="confirmBtn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200">
+                        确认激活
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载提示 -->
+    <div id="loadingModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <h3 class="text-lg font-medium text-gray-900">正在处理...</h3>
+                <p class="text-sm text-gray-500 mt-2">请稍候，正在激活账号</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedAccounts = [];
+        let pendingActivation = null;
+
+        // 全选功能
+        document.getElementById('selectAll').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.account-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateSelectedCount();
+        });
+
+        // 单个选择功能
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('account-checkbox')) {
+                updateSelectedCount();
+            }
+        });
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.account-checkbox:checked');
+            selectedAccounts = Array.from(checkboxes).map(cb => cb.value);
+            
+            const count = selectedAccounts.length;
+            document.getElementById('selectedCount').textContent = `已选择 ${count} 个账号组`;
+            document.getElementById('activateBtn').disabled = count === 0;
+            
+            // 更新全选状态
+            const allCheckboxes = document.querySelectorAll('.account-checkbox');
+            const selectAllCheckbox = document.getElementById('selectAll');
+            selectAllCheckbox.checked = count === allCheckboxes.length && count > 0;
+        }
+
+        function activateSelected() {
+            if (selectedAccounts.length === 0) {
+                alert('请先选择要激活的账号');
+                return;
+            }
+            
+            pendingActivation = selectedAccounts.slice();
+            document.getElementById('confirmMessage').textContent = 
+                `您确定要激活选中的 ${selectedAccounts.length} 个账号组吗？激活后将移动到激活池中。`;
+            document.getElementById('confirmModal').classList.remove('hidden');
+        }
+
+        function activateSingle(accountPrefix) {
+            pendingActivation = [accountPrefix];
+            document.getElementById('confirmMessage').textContent = 
+                `您确定要激活账号组 "${accountPrefix}" 吗？激活后将移动到激活池中。`;
+            document.getElementById('confirmModal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.add('hidden');
+            pendingActivation = null;
+        }
+
+        function confirmActivation() {
+            if (!pendingActivation || pendingActivation.length === 0) {
+                return;
+            }
+            
+            document.getElementById('confirmModal').classList.add('hidden');
+            document.getElementById('loadingModal').classList.remove('hidden');
+            
+            // 批量激活
+            Promise.all(pendingActivation.map(prefix => 
+                fetch('/api/activate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        account_prefix: prefix
+                    })
+                }).then(response => response.json())
+            )).then(results => {
+                document.getElementById('loadingModal').classList.add('hidden');
+                
+                const successCount = results.filter(r => r.success).length;
+                const failCount = results.length - successCount;
+                
+                if (successCount > 0) {
+                    alert(`成功激活 ${successCount} 个账号组` + (failCount > 0 ? `，${failCount} 个失败` : ''));
+                    
+                    // 移除已激活的账号从页面
+                    results.forEach((result, index) => {
+                        if (result.success) {
+                            const accountElement = document.querySelector(`[data-account="${pendingActivation[index]}"]`);
+                            if (accountElement) {
+                                accountElement.remove();
+                            }
+                        }
+                    });
+                    
+                    // 更新计数
+                    updatePendingCount();
+                } else {
+                    alert('激活失败，请检查文件是否完整');
+                }
+                
+                // 重置选择
+                selectedAccounts = [];
+                updateSelectedCount();
+                pendingActivation = null;
+                
+            }).catch(error => {
+                document.getElementById('loadingModal').classList.add('hidden');
+                console.error('激活失败:', error);
+                alert('激活失败，请稍后重试');
+            });
+        }
+
+        function updatePendingCount() {
+            const remainingCount = document.querySelectorAll('[data-account]').length;
+            document.getElementById('pendingCount').textContent = remainingCount;
+            
+            if (remainingCount === 0) {
+                // 如果没有待激活账号了，显示提示信息
+                document.getElementById('accountList').innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+                        <svg class="w-12 h-12 text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <h3 class="text-lg font-medium text-blue-900 mb-2">所有账号已激活</h3>
+                        <p class="text-blue-700">当前没有待激活的账号。</p>
+                    </div>
+                `;
+            }
+        }
+
+        function refreshAccountList() {
+            window.location.reload();
+        }
+
+        // 初始化
+        updateSelectedCount();
+    </script>
+</body>
+</html>

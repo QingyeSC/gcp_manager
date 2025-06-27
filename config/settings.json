@@ -1,0 +1,86 @@
+{
+    "database": {
+        "host": "mysql",
+        "port": 3306,
+        "name": "gcp_accounts",
+        "user": "gcp_user",
+        "password": "gcp_password_123",
+        "charset": "utf8mb4",
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_recycle": 3600
+    },
+    "redis": {
+        "host": "redis",
+        "port": 6379,
+        "password": "redis_password_123",
+        "db": 0,
+        "session_db": 1
+    },
+    "new_api": {
+        "base_url": "http://152.53.166.175:3058",
+        "api_key": "B1orbCK2aDVoaT+qtz2Y28qAK/5EZA==",
+        "min_channels": 10,
+        "target_channels": 15,
+        "upload_endpoint": "/api/channel/",
+        "search_endpoint": "/api/channel/search?keyword=&group=svip&model=&id_sort=true&tag_mode=false"
+    },
+    "file_naming": {
+        "prefix_patterns": [
+            "proj-.*-vip",
+            "proj-.*-premium"
+        ],
+        "suffix_range": ["01", "02", "03"]
+    },
+    "archive": {
+        "retention_days": 30,
+        "auto_cleanup": true,
+        "cleanup_schedule": "0 2 * * *"
+    },
+    "monitoring": {
+        "check_interval_seconds": 300,
+        "retry_attempts": 3,
+        "retry_delay_seconds": 60,
+        "concurrent_uploads": 3,
+        "upload_timeout": 15
+    },
+    "logging": {
+        "level": "INFO",
+        "max_file_size_mb": 10,
+        "backup_count": 5,
+        "log_format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "web_panel": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": false,
+        "secret_key": "your-secret-key-change-this",
+        "session_timeout": 3600,
+        "max_content_length": 16777216
+    },
+    "notifications": {
+        "webhook_url": "",
+        "notify_on_low_channels": true,
+        "notify_on_activation_needed": true,
+        "notify_on_upload_failure": true,
+        "telegram": {
+            "bot_token": "",
+            "chat_id": ""
+        }
+    },
+    "security": {
+        "enable_auth": false,
+        "allowed_ips": [],
+        "rate_limit": {
+            "requests_per_minute": 60,
+            "requests_per_hour": 1000
+        }
+    },
+    "backup": {
+        "enabled": true,
+        "schedule": "0 3 * * *",
+        "retention_days": 7,
+        "backup_accounts": true,
+        "backup_database": true
+    }
+}
