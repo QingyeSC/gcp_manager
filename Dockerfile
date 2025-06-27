@@ -39,7 +39,7 @@ RUN mkdir -p /app/accounts/fresh \
 
 # 设置文件权限
 RUN chmod +x /app/scripts/*.py \
-    && chmod +x /app/start.py \
+    && chmod +x /app/app.py \
     && chmod +x /app/docker/entrypoint.sh
 
 # 复制supervisor配置

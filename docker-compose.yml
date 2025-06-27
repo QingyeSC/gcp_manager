@@ -11,7 +11,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-gcp_password_123}
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "3367:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d
