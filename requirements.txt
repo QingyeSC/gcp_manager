@@ -32,6 +32,7 @@ psutil==5.9.5
 
 # 任务调度
 APScheduler==3.10.4
+schedule==1.2.0
 
 # 并发处理
 concurrent-futures==3.1.1
