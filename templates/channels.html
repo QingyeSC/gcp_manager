@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>渠道管理 - GCP账号管理面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <style>
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .status-active { 
+            background-color: #10b981; 
+            color: white;
+        }
+        .status-disabled { 
+            background-color: #ef4444; 
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- 导航栏 -->
+    <nav class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="text-white hover:text-gray-200 mr-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                    </a>
+                    <h1 class="text-white text-xl font-bold">渠道管理</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="refreshChannels()" class="text-white hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                        刷新
+                    </button>
+                    <span class="text-white text-sm" id="channelCount">
+                        加载中...
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto py-6 px-4">
+        <!-- 统计面板 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">活跃渠道</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="activeCount">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">禁用渠道</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="disabledCount">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-600">总渠道数</p>
+                        <p class="text-2xl font-semibold text-gray-900" id="totalCount">-</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 过滤器 -->
+        <div class="bg-white rounded-lg shadow mb-6 p-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-center space-x-4 mb-4 sm:mb-0">
+                    <select id="statusFilter" onchange="filterChannels()" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                        <option value="all">全部渠道</option>
+                        <option value="active">仅活跃</option>
+                        <option value="disabled">仅禁用</option>
+                    </select>
+                    <input type="text" id="searchInput" placeholder="搜索渠道名称..." onkeyup="searchChannels()" 
+                           class="border border-gray-300 rounded-md px-3 py-2 text-sm w-64">
+                </div>
+                <div class="text-sm text-gray-500" id="showingCount">
+                    显示全部渠道
+                </div>
+            </div>
+        </div>
+
+        <!-- 渠道列表 -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">渠道详情列表</h3>
+            </div>
+            
+            <!-- 加载状态 -->
+            <div id="loadingState" class="p-8 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p class="text-gray-500">正在加载渠道数据...</p>
+            </div>
+
+            <!-- 渠道表格 -->
+            <div id="channelsTable" class="hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">名称</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">已用额度</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">模型</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标签</th>
+                            </tr>
+                        </thead>
+                        <tbody id="channelsTableBody" class="bg-white divide-y divide-gray-200">
+                            <!-- 渠道数据将通过JavaScript插入 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 空状态 -->
+            <div id="emptyState" class="hidden p-8 text-center">
+                <svg class="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">没有找到渠道</h3>
+                <p class="text-gray-500">当前没有符合条件的渠道数据。</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allChannels = [];
+        let filteredChannels = [];
+
+        // 页面加载完成后获取渠道数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadChannels();
+        });
+
+        async function loadChannels() {
+            try {
+                // 这里需要添加一个新的API端点来获取渠道数据
+                // 暂时模拟数据加载
+                showLoading();
+                
+                // 模拟API延迟
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 模拟渠道数据 - 实际应该从 /api/channels 获取
+                const mockChannels = [
+                    {
+                        id: 1,
+                        name: "proj-alice-vip-01",
+                        status: 1,
+                        used_quota: 150000000, // 1.5亿 = $300
+                        tag: "Vertex-vip",
+                        models: "gemini-2.5-pro,gemini-2.0-flash-001"
+                    },
+                    {
+                        id: 2, 
+                        name: "proj-alice-vip-02",
+                        status: 0,
+                        used_quota: 250000000, // 2.5亿 = $500
+                        tag: "Vertex-vip",
+                        models: "gemini-2.5-pro"
+                    }
+                    // ... 更多数据
+                ];
+                
+                allChannels = mockChannels;
+                updateStatistics();
+                filterChannels();
+                hideLoading();
+                
+            } catch (error) {
+                console.error('加载渠道数据失败:', error);
+                showError();
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('channelsTable').classList.add('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showError() {
+            hideLoading();
+            document.getElementById('emptyState').classList.remove('hidden');
+        }
+
+        function updateStatistics() {
+            const activeChannels = allChannels.filter(ch => ch.status === 1);
+            const disabledChannels = allChannels.filter(ch => ch.status === 0);
+            
+            document.getElementById('activeCount').textContent = activeChannels.length;
+            document.getElementById('disabledCount').textContent = disabledChannels.length;
+            document.getElementById('totalCount').textContent = allChannels.length;
+            document.getElementById('channelCount').textContent = `总计: ${allChannels.length} 个渠道`;
+        }
+
+        function filterChannels() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredChannels = allChannels.filter(channel => {
+                const matchesStatus = statusFilter === 'all' || 
+                    (statusFilter === 'active' && channel.status === 1) ||
+                    (statusFilter === 'disabled' && channel.status === 0);
+                
+                const matchesSearch = channel.name.toLowerCase().includes(searchTerm);
+                
+                return matchesStatus && matchesSearch;
+            });
+            
+            renderChannels();
+            updateShowingCount();
+        }
+
+        function searchChannels() {
+            filterChannels();
+        }
+
+        function renderChannels() {
+            const tbody = document.getElementById('channelsTableBody');
+            
+            if (filteredChannels.length === 0) {
+                document.getElementById('channelsTable').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('hidden');
+                return;
+            }
+            
+            document.getElementById('channelsTable').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            
+            tbody.innerHTML = filteredChannels.map(channel => {
+                const quotaDollars = (channel.used_quota / 500000).toFixed(2);
+                const statusClass = channel.status === 1 ? 'status-active' : 'status-disabled';
+                const statusText = channel.status === 1 ? '活跃' : '禁用';
+                
+                return `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${channel.id}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${channel.name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+                                ${statusText}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${quotaDollars}</td>
+                        <td class="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title="${channel.models}">${channel.models}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${channel.tag}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateShowingCount() {
+            const showingText = filteredChannels.length === allChannels.length 
+                ? `显示全部 ${allChannels.length} 个渠道`
+                : `显示 ${filteredChannels.length} / ${allChannels.length} 个渠道`;
+            
+            document.getElementById('showingCount').textContent = showingText;
+        }
+
+        function refreshChannels() {
+            loadChannels();
+        }
+    </script>
+</body>
+</html>

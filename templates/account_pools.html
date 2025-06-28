@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账号池管理 - GCP账号管理面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <style>
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .pool-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        .pool-fresh { border-left-color: #3b82f6; }
+        .pool-uploaded { border-left-color: #10b981; }
+        .pool-exhausted_300 { border-left-color: #f59e0b; }
+        .pool-activated { border-left-color: #8b5cf6; }
+        .pool-exhausted_100 { border-left-color: #ef4444; }
+        .pool-archive { border-left-color: #6b7280; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- 导航栏 -->
+    <nav class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="text-white hover:text-gray-200 mr-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                    </a>
+                    <h1 class="text-white text-xl font-bold">账号池管理</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <select id="poolFilter" onchange="filterPools()" class="bg-white border border-gray-300 rounded-md px-3 py-1 text-sm">
+                        <option value="all">全部账号池</option>
+                        <option value="fresh">新账号池</option>
+                        <option value="uploaded">使用中</option>
+                        <option value="exhausted_300">待激活</option>
+                        <option value="activated">已激活</option>
+                        <option value="exhausted_100">已耗尽</option>
+                        <option value="archive">已归档</option>
+                    </select>
+                    <button onclick="refreshPools()" class="text-white hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                        刷新
+                    </button>
+                    <span class="text-white text-sm" id="poolCount">
+                        加载中...
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto py-6 px-4">
+        <!-- 统计面板 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-blue-600" id="freshCount">-</div>
+                <div class="text-xs text-gray-500">新账号池</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-green-600" id="uploadedCount">-</div>
+                <div class="text-xs text-gray-500">使用中</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-yellow-600" id="exhausted300Count">-</div>
+                <div class="text-xs text-gray-500">待激活</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-purple-600" id="activatedCount">-</div>
+                <div class="text-xs text-gray-500">已激活</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-red-600" id="exhausted100Count">-</div>
+                <div class="text-xs text-gray-500">已耗尽</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 text-center">
+                <div class="text-2xl font-bold text-gray-600" id="archiveCount">-</div>
+                <div class="text-xs text-gray-500">已归档</div>
+            </div>
+        </div>
+
+        <!-- 搜索过滤 -->
+        <div class="bg-white rounded-lg shadow mb-6 p-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-center space-x-4 mb-4 sm:mb-0">
+                    <input type="text" id="searchInput" placeholder="搜索账号组名称..." onkeyup="searchPools()" 
+                           class="border border-gray-300 rounded-md px-3 py-2 text-sm w-64">
+                    <span class="text-sm text-gray-500">
+                        支持搜索项目前缀，如: proj-alice
+                    </span>
+                </div>
+                <div class="text-sm text-gray-500" id="showingCount">
+                    显示全部账号池
+                </div>
+            </div>
+        </div>
+
+        <!-- 账号池列表 -->
+        <div id="poolsList" class="space-y-4">
+            <!-- 加载状态 -->
+            <div id="loadingState" class="bg-white rounded-lg shadow p-8 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p class="text-gray-500">正在加载账号池数据...</p>
+            </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div id="emptyState" class="hidden bg-white rounded-lg shadow p-8 text-center">
+            <svg class="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-2.172a1 1 0 01-.707-.293l-2.414-2.414a1 1 0 00-.707-.293H6"></path>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">没有找到账号池</h3>
+            <p class="text-gray-500">当前没有符合条件的账号组。</p>
+        </div>
+    </div>
+
+    <script>
+        let allPools = {};
+        let filteredPools = {};
+
+        // 页面加载完成后获取数据
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置初始的池类型过滤器
+            let initialPoolType = '{{ pool_type }}';
+            if (initialPoolType && initialPoolType !== 'all') {
+                document.getElementById('poolFilter').value = initialPoolType;
+            }
+            
+            loadPools();
+        });
+
+        async function loadPools() {
+            try {
+                showLoading();
+                
+                const response = await fetch('/api/account-pools');
+                const result = await response.json();
+                
+                if (result.success) {
+                    allPools = result.data || {};
+                    updateStatistics();
+                    filterPools();
+                    hideLoading();
+                } else {
+                    throw new Error(result.message || '获取数据失败');
+                }
+                
+            } catch (error) {
+                console.error('加载账号池数据失败:', error);
+                showError();
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showError() {
+            hideLoading();
+            document.getElementById('emptyState').classList.remove('hidden');
+        }
+
+        function updateStatistics() {
+            const poolTypes = ['fresh', 'uploaded', 'exhausted_300', 'activated', 'exhausted_100', 'archive'];
+            const counts = {};
+            
+            poolTypes.forEach(type => {
+                counts[type] = Object.keys(allPools[type] || {}).length;
+            });
+
+            document.getElementById('freshCount').textContent = counts.fresh;
+            document.getElementById('uploadedCount').textContent = counts.uploaded;
+            document.getElementById('exhausted300Count').textContent = counts.exhausted_300;
+            document.getElementById('activatedCount').textContent = counts.activated;
+            document.getElementById('exhausted100Count').textContent = counts.exhausted_100;
+            document.getElementById('archiveCount').textContent = counts.archive;
+
+            const totalCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
+            document.getElementById('poolCount').textContent = `总计: ${totalCount} 个账号组`;
+        }
+
+        function filterPools() {
+            const poolFilter = document.getElementById('poolFilter').value;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            filteredPools = {};
+            
+            Object.keys(allPools).forEach(poolType => {
+                if (poolFilter === 'all' || poolFilter === poolType) {
+                    filteredPools[poolType] = {};
+                    
+                    Object.keys(allPools[poolType] || {}).forEach(groupName => {
+                        if (groupName.toLowerCase().includes(searchTerm)) {
+                            filteredPools[poolType][groupName] = allPools[poolType][groupName];
+                        }
+                    });
+                    
+                    // 如果该池类型没有匹配的组，则删除该池类型
+                    if (Object.keys(filteredPools[poolType]).length === 0) {
+                        delete filteredPools[poolType];
+                    }
+                }
+            });
+            
+            renderPools();
+            updateShowingCount();
+        }
+
+        function searchPools() {
+            filterPools();
+        }
+
+        function renderPools() {
+            const poolsList = document.getElementById('poolsList');
+            
+            // 计算总的账号组数量
+            const totalGroups = Object.values(filteredPools).reduce((total, pool) => 
+                total + Object.keys(pool).length, 0
+            );
+            
+            if (totalGroups === 0) {
+                poolsList.innerHTML = '';
+                document.getElementById('emptyState').classList.remove('hidden');
+                return;
+            }
+            
+            document.getElementById('emptyState').classList.add('hidden');
+            
+            const poolNames = {
+                fresh: { name: '新账号池', icon: '📦', color: 'blue' },
+                uploaded: { name: '使用中', icon: '🚀', color: 'green' },
+                exhausted_300: { name: '待激活', icon: '⚠️', color: 'yellow' },
+                activated: { name: '已激活', icon: '✅', color: 'purple' },
+                exhausted_100: { name: '已耗尽', icon: '🔴', color: 'red' },
+                archive: { name: '已归档', icon: '📁', color: 'gray' }
+            };
+            
+            let html = '';
+            
+            Object.keys(filteredPools).forEach(poolType => {
+                const poolInfo = poolNames[poolType];
+                const groups = filteredPools[poolType];
+                const groupCount = Object.keys(groups).length;
+                
+                if (groupCount > 0) {
+                    html += `
+                        <div class="bg-white rounded-lg shadow overflow-hidden">
+                            <div class="bg-${poolInfo.color}-50 px-6 py-4 border-b border-${poolInfo.color}-100">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-medium text-${poolInfo.color}-900 flex items-center">
+                                        <span class="text-xl mr-2">${poolInfo.icon}</span>
+                                        ${poolInfo.name}
+                                    </h3>
+                                    <span class="bg-${poolInfo.color}-100 text-${poolInfo.color}-800 px-2 py-1 rounded-full text-sm font-medium">
+                                        ${groupCount} 个账号组
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="p-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    `;
+                    
+                    Object.keys(groups).forEach(groupName => {
+                        const group = groups[groupName];
+                        const fileCount = group.length;
+                        const totalSize = group.reduce((sum, file) => sum + file.size, 0);
+                        const totalSizeKB = (totalSize / 1024).toFixed(1);
+                        
+                        html += `
+                            <div class="pool-card pool-${poolType} bg-gray-50 rounded-lg p-4 hover:bg-gray-100">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="font-medium text-gray-900 truncate">${groupName}</h4>
+                                    <span class="text-xs text-gray-500">${fileCount} 文件</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mb-2">
+                                    总大小: ${totalSizeKB} KB
+                                </div>
+                                <div class="space-y-1">
+                        `;
+                        
+                        group.forEach(file => {
+                            const fileSizeKB = (file.size / 1024).toFixed(1);
+                            html += `
+                                <div class="flex items-center justify-between text-xs text-gray-500">
+                                    <span class="truncate">${file.file}</span>
+                                    <span>${fileSizeKB}KB</span>
+                                </div>
+                            `;
+                        });
+                        
+                        html += `
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += `
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            
+            poolsList.innerHTML = html;
+        }
+
+        function updateShowingCount() {
+            const totalFiltered = Object.values(filteredPools).reduce((total, pool) => 
+                total + Object.keys(pool).length, 0
+            );
+            const totalAll = Object.values(allPools).reduce((total, pool) => 
+                total + Object.keys(pool).length, 0
+            );
+            
+            const showingText = totalFiltered === totalAll 
+                ? `显示全部 ${totalAll} 个账号组`
+                : `显示 ${totalFiltered} / ${totalAll} 个账号组`;
+            
+            document.getElementById('showingCount').textContent = showingText;
+        }
+
+        function refreshPools() {
+            loadPools();
+        }
+    </script>
+</body>
+</html>
