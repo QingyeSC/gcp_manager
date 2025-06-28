@@ -3,6 +3,7 @@ import mysql.connector
 from mysql.connector import pooling
 import json
 import shutil
+import requests  # 添加缺失的导入
 from pathlib import Path
 from datetime import datetime
 import os
@@ -15,8 +16,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+
 class PanelManager:
+    """GCP账号管理面板主要业务逻辑类"""
+    
     def __init__(self):
+        """初始化面板管理器"""
         self.base_dir = Path("accounts")
         self.load_config()
         self.init_database_pool()
@@ -226,14 +231,24 @@ class PanelManager:
         return result
     
     def get_channel_data(self):
-        """获取渠道数据（从New API）"""
+        """获取New API的所有渠道状态 - 增强版本"""
         try:
-            import requests
+            # 检查配置
+            config = self.config.get('new_api', {})
+            api_key = config.get('api_key')
+            base_url = config.get('base_url')
             
-            # 构造API请求URL
-            base_url = self.config['new_api']['base_url']
-            search_path = self.config['new_api']['search_path']
-            search_params = self.config['new_api']['search_params']
+            if not api_key:
+                logger.error("NEW_API_TOKEN 未配置")
+                return []
+            
+            if not base_url:
+                logger.error("NEW_API_BASE_URL 未配置")
+                return []
+            
+            # 构建完整的API URL
+            search_path = config.get('search_path', '/api/channel/search')
+            search_params = config.get('search_params', 'keyword=&group=vertex&model=&id_sort=true&tag_mode=false')
             
             api_url = f"{base_url}{search_path}?{search_params}"
             
@@ -242,25 +257,52 @@ class PanelManager:
                 "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
                 "cache-control": "no-store",
                 "new-api-user": "1",
-                "authorization": f"Bearer {self.config['new_api']['api_key']}",
+                "authorization": f"Bearer {api_key}",
                 "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
             
+            logger.info(f"请求New API: {api_url}")
+            
             response = requests.get(api_url, headers=headers, timeout=30)
             
+            logger.info(f"New API响应状态: {response.status_code}")
+            
             if response.status_code == 200:
-                data = response.json()
-                if data.get('success', False):
-                    return data.get('data', {}).get('items', [])
-                else:
-                    logger.error(f"API返回失败: {data.get('message', '未知错误')}")
+                try:
+                    data = response.json()
+                    logger.info(f"New API返回数据结构: success={data.get('success')}")
+                    
+                    if data.get('success', False):
+                        items = data.get('data', {}).get('items', [])
+                        logger.info(f"成功从New API获取 {len(items)} 个渠道")
+                        
+                        # 记录每个渠道的基本信息用于调试
+                        for item in items[:3]:  # 只记录前3个
+                            logger.info(f"渠道: {item.get('name')} status={item.get('status')} quota={item.get('used_quota')}")
+                        
+                        return items
+                    else:
+                        error_msg = data.get('message', '未知错误')
+                        logger.error(f"New API返回失败: {error_msg}")
+                        return []
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"New API返回数据JSON解析失败: {e}")
+                    logger.error(f"响应内容: {response.text[:500]}")
                     return []
             else:
-                logger.error(f"获取渠道数据失败: {response.status_code}")
+                logger.error(f"New API请求失败: HTTP {response.status_code}")
+                logger.error(f"响应内容: {response.text[:500]}")
                 return []
                 
+        except requests.exceptions.Timeout:
+            logger.error("New API请求超时")
+            return []
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"New API连接失败: {e}")
+            return []
         except Exception as e:
-            logger.error(f"获取渠道数据异常: {e}")
+            logger.error(f"New API请求异常: {e}")
             return []
     
     def activate_account_group(self, account_prefix):
@@ -357,9 +399,46 @@ class PanelManager:
         with open(log_path, 'a', encoding='utf-8') as f:
             f.write(f"[{timestamp}] JSON文件上传: {filename}, 项目ID: {project_id}\n")
 
+
+# 创建全局面板管理器实例
 panel_manager = PanelManager()
 
+
 # ===== 网页模板路由 =====
+
+@app.route('/api/debug/new-api')
+def debug_new_api():
+    """调试New API连接"""
+    try:
+        config = panel_manager.config.get('new_api', {})
+        
+        debug_info = {
+            'config': {
+                'base_url': config.get('base_url', '未配置'),
+                'has_token': bool(config.get('api_key')),
+                'search_path': config.get('search_path', '未配置'),
+                'search_params': config.get('search_params', '未配置')
+            },
+            'test_result': None,
+            'channels_count': 0,
+            'sample_channels': []
+        }
+        
+        # 测试API调用
+        try:
+            channels = panel_manager.get_channel_data()
+            debug_info['test_result'] = 'SUCCESS'
+            debug_info['channels_count'] = len(channels)
+            debug_info['sample_channels'] = channels[:3] if channels else []
+            
+        except Exception as e:
+            debug_info['test_result'] = f'FAILED: {str(e)}'
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/health')
 def health_check():
@@ -377,11 +456,13 @@ def health_check():
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
+
 @app.route('/')
 def dashboard():
     """仪表板页面"""
     stats = panel_manager.get_account_statistics()
     return render_template('dashboard.html', stats=stats)
+
 
 @app.route('/pending-activation')
 def pending_activation():
@@ -389,11 +470,13 @@ def pending_activation():
     accounts = panel_manager.get_pending_activation_accounts()
     return render_template('pending_activation.html', accounts=accounts)
 
+
 @app.route('/exhausted-100')
 def exhausted_100():
     """100刀用完账号页面"""
     accounts = panel_manager.get_exhausted_100_accounts()
     return render_template('exhausted_100.html', accounts=accounts)
+
 
 @app.route('/account-pools')
 def account_pools():
@@ -402,12 +485,14 @@ def account_pools():
     pool_type = request.args.get('type', 'all')
     return render_template('account_pools.html', pool_type=pool_type)
 
+
 @app.route('/channels')
 def channels():
     """渠道管理页面"""
     # 获取URL参数中的状态筛选
     status_filter = request.args.get('status', 'all')
     return render_template('channels.html', status_filter=status_filter)
+
 
 # ===== API 数据接口 =====
 
@@ -427,6 +512,7 @@ def activate_account():
     else:
         return jsonify({'success': False, 'message': '激活失败，请检查文件是否完整'})
 
+
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_account():
     """清理用完的账号API"""
@@ -445,11 +531,13 @@ def cleanup_account():
     else:
         return jsonify({'success': False, 'message': '操作失败'})
 
+
 @app.route('/api/stats')
 def get_stats():
     """获取统计信息API"""
     stats = panel_manager.get_account_statistics()
     return jsonify(stats)
+
 
 @app.route('/api/account-pools')
 def get_account_pools():
@@ -468,22 +556,38 @@ def get_account_pools():
             'message': f'获取账号池数据失败: {str(e)}'
         }), 500
 
+
 @app.route('/api/channels')
 def get_channels():
-    """获取渠道数据API"""
+    """获取渠道数据API - 直接从New API获取真实数据"""
     try:
+        # 直接调用 New API 获取最新数据
         channels_data = panel_manager.get_channel_data()
+        
+        if channels_data is None:
+            return jsonify({
+                'success': False,
+                'message': '无法从New API获取渠道数据，请检查API配置',
+                'data': []
+            }), 500
+        
+        logger.info(f"成功从New API获取 {len(channels_data)} 个渠道数据")
+        
         return jsonify({
             'success': True,
             'data': channels_data,
-            'message': '获取渠道数据成功'
+            'message': f'成功获取 {len(channels_data)} 个渠道数据',
+            'source': 'New API (实时数据)'
         })
+        
     except Exception as e:
         logger.error(f"获取渠道数据失败: {e}")
         return jsonify({
             'success': False,
-            'message': f'获取渠道数据失败: {str(e)}'
+            'message': f'获取渠道数据失败: {str(e)}',
+            'data': []
         }), 500
+
 
 @app.route('/api/upload-json', methods=['POST'])
 def upload_json():
@@ -554,6 +658,7 @@ def upload_json():
     except Exception as e:
         logger.error(f"JSON文件上传异常: {e}")
         return jsonify({'success': False, 'message': f'上传失败: {str(e)}'}), 500
+
 
 @app.route('/api/batch-upload-json', methods=['POST'])
 def batch_upload_json():
@@ -660,20 +765,27 @@ def batch_upload_json():
         logger.error(f"批量JSON文件上传异常: {e}")
         return jsonify({'success': False, 'message': f'批量上传失败: {str(e)}'}), 500
 
+
 # ===== 错误处理 =====
 
 @app.errorhandler(500)
 def internal_error(error):
+    """处理500内部服务器错误"""
     logger.error(f"内部服务器错误: {error}")
     return jsonify({'error': '内部服务器错误'}), 500
 
+
 @app.errorhandler(404)
 def not_found(error):
+    """处理404页面未找到错误"""
     return jsonify({'error': '页面未找到'}), 404
 
+
 if __name__ == '__main__':
+    # 从环境变量获取运行配置
     host = os.getenv('WEB_HOST', '0.0.0.0')
     port = int(os.getenv('WEB_PORT', 5000))
     debug = os.getenv('WEB_DEBUG', 'false').lower() == 'true'
     
+    # 启动Flask应用
     app.run(host=host, port=port, debug=debug)

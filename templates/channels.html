@@ -156,6 +156,18 @@
                 <h3 class="text-lg font-medium text-gray-900 mb-2">没有找到渠道</h3>
                 <p class="text-gray-500">当前没有符合条件的渠道数据。</p>
             </div>
+
+            <!-- 错误状态 -->
+            <div id="errorState" class="hidden p-8 text-center">
+                <svg class="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">加载失败</h3>
+                <p class="text-gray-500" id="errorMessage">获取渠道数据失败，请检查API配置或网络连接。</p>
+                <button onclick="refreshChannels()" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm">
+                    重试
+                </button>
+            </div>
         </div>
     </div>
 
@@ -170,42 +182,31 @@
 
         async function loadChannels() {
             try {
-                // 这里需要添加一个新的API端点来获取渠道数据
-                // 暂时模拟数据加载
                 showLoading();
                 
-                // 模拟API延迟
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // 调用真实的API端点 - 移除了所有模拟数据
+                const response = await fetch('/api/channels');
                 
-                // 模拟渠道数据 - 实际应该从 /api/channels 获取
-                const mockChannels = [
-                    {
-                        id: 1,
-                        name: "proj-alice-vip-01",
-                        status: 1,
-                        used_quota: 150000000, // 1.5亿 = $300
-                        tag: "Vertex-vip",
-                        models: "gemini-2.5-pro,gemini-2.0-flash-001"
-                    },
-                    {
-                        id: 2, 
-                        name: "proj-alice-vip-02",
-                        status: 0,
-                        used_quota: 250000000, // 2.5亿 = $500
-                        tag: "Vertex-vip",
-                        models: "gemini-2.5-pro"
-                    }
-                    // ... 更多数据
-                ];
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
                 
-                allChannels = mockChannels;
-                updateStatistics();
-                filterChannels();
-                hideLoading();
+                const result = await response.json();
+                
+                if (result.success) {
+                    allChannels = result.data || [];
+                    console.log('从New API加载到渠道数据:', allChannels.length, '个');
+                    
+                    updateStatistics();
+                    filterChannels();
+                    hideLoading();
+                } else {
+                    throw new Error(result.message || '获取数据失败');
+                }
                 
             } catch (error) {
                 console.error('加载渠道数据失败:', error);
-                showError();
+                showError(error.message);
             }
         }
 
@@ -213,20 +214,22 @@
             document.getElementById('loadingState').classList.remove('hidden');
             document.getElementById('channelsTable').classList.add('hidden');
             document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('errorState').classList.add('hidden');
         }
 
         function hideLoading() {
             document.getElementById('loadingState').classList.add('hidden');
         }
 
-        function showError() {
+        function showError(message = '未知错误') {
             hideLoading();
-            document.getElementById('emptyState').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = `获取渠道数据失败: ${message}`;
+            document.getElementById('errorState').classList.remove('hidden');
         }
 
         function updateStatistics() {
             const activeChannels = allChannels.filter(ch => ch.status === 1);
-            const disabledChannels = allChannels.filter(ch => ch.status === 0);
+            const disabledChannels = allChannels.filter(ch => ch.status !== 1);
             
             document.getElementById('activeCount').textContent = activeChannels.length;
             document.getElementById('disabledCount').textContent = disabledChannels.length;
@@ -241,7 +244,7 @@
             filteredChannels = allChannels.filter(channel => {
                 const matchesStatus = statusFilter === 'all' || 
                     (statusFilter === 'active' && channel.status === 1) ||
-                    (statusFilter === 'disabled' && channel.status === 0);
+                    (statusFilter === 'disabled' && channel.status !== 1);
                 
                 const matchesSearch = channel.name.toLowerCase().includes(searchTerm);
                 
@@ -269,9 +272,12 @@
             document.getElementById('emptyState').classList.add('hidden');
             
             tbody.innerHTML = filteredChannels.map(channel => {
-                const quotaDollars = (channel.used_quota / 500000).toFixed(2);
+                // 转换 used_quota 为美元显示
+                const quotaDollars = (channel.used_quota / 1000000).toFixed(2);
                 const statusClass = channel.status === 1 ? 'status-active' : 'status-disabled';
                 const statusText = channel.status === 1 ? '活跃' : '禁用';
+                const models = channel.models || '未知';
+                const tag = channel.tag || '无标签';
                 
                 return `
                     <tr>
@@ -283,8 +289,8 @@
                             </span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${quotaDollars}</td>
-                        <td class="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title="${channel.models}">${channel.models}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${channel.tag}</td>
+                        <td class="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title="${models}">${models}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${tag}</td>
                     </tr>
                 `;
             }).join('');
