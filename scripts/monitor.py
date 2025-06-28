@@ -57,34 +57,34 @@ class GCPAccountManager:
             logger.info("监控器启动 - 轻量模式（仅监控+补充）")
     
     def load_config(self, config_path):
-    """加载配置"""
-    if Path(config_path).exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = json.load(f)
-    else:
-        # 从环境变量加载配置
-        self.config = {
-            "database": {
-                "host": os.getenv('DB_HOST', 'mysql'),
-                "port": int(os.getenv('DB_PORT', 3306)),
-                "user": os.getenv('DB_USER', 'gcp_user'),
-                "password": os.getenv('DB_PASSWORD', 'gcp_password_123'),
-                "name": os.getenv('DB_NAME', 'gcp_accounts'),
-                "charset": "utf8mb4"
-            },
-            "new_api": {
-                "base_url": os.getenv('NEW_API_BASE_URL', 'http://152.53.166.175:3058'),
-                "api_key": os.getenv('NEW_API_TOKEN', ''),
-                "min_channels": int(os.getenv('MIN_CHANNELS', 10)),
-                "target_channels": int(os.getenv('TARGET_CHANNELS', 15)),
-                # 添加查询路径配置
-                "search_path": os.getenv('NEW_API_SEARCH_PATH', '/api/channel/search'),
-                "search_params": os.getenv('NEW_API_SEARCH_PARAMS', 'keyword=&group=svip&model=&id_sort=true&tag_mode=false')
-            },
-            "monitoring": {
-                "check_interval_seconds": int(os.getenv('CHECK_INTERVAL', 300))
+        """加载配置"""
+        if Path(config_path).exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+        else:
+            # 从环境变量加载配置
+            self.config = {
+                "database": {
+                    "host": os.getenv('DB_HOST', 'mysql'),
+                    "port": int(os.getenv('DB_PORT', 3306)),
+                    "user": os.getenv('DB_USER', 'gcp_user'),
+                    "password": os.getenv('DB_PASSWORD', 'gcp_password_123'),
+                    "name": os.getenv('DB_NAME', 'gcp_accounts'),
+                    "charset": "utf8mb4"
+                },
+                "new_api": {
+                    "base_url": os.getenv('NEW_API_BASE_URL', 'http://152.53.166.175:3058'),
+                    "api_key": os.getenv('NEW_API_TOKEN', ''),
+                    "min_channels": int(os.getenv('MIN_CHANNELS', 10)),
+                    "target_channels": int(os.getenv('TARGET_CHANNELS', 15)),
+                    # 添加查询路径配置
+                    "search_path": os.getenv('NEW_API_SEARCH_PATH', '/api/channel/search'),
+                    "search_params": os.getenv('NEW_API_SEARCH_PARAMS', 'keyword=&group=svip&model=&id_sort=true&tag_mode=false')
+                },
+                "monitoring": {
+                    "check_interval_seconds": int(os.getenv('CHECK_INTERVAL', 300))
+                }
             }
-        }
     
     def get_db_connection(self):
         """获取MySQL数据库连接"""
@@ -144,41 +144,37 @@ class GCPAccountManager:
         logger.info("数据库表初始化完成")
     
     def get_new_api_status(self):
-    """获取New API的所有渠道状态"""
-    try:
-        # 使用配置的路径和参数
-        base_url = self.config['new_api']['base_url']
-        search_path = self.config['new_api']['search_path']
-        search_params = self.config['new_api']['search_params']
-        
-        api_url = f"{base_url}{search_path}?{search_params}"
-        
-        headers = {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "cache-control": "no-store",
-            "new-api-user": "1",
-            "authorization": f"Bearer {self.config['new_api']['api_key']}",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        
-        logger.info(f"查询API URL: {api_url}")
-        response = requests.get(api_url, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('success', False):
-                return data.get('data', {}).get('items', [])
-            else:
-                logger.error(f"API返回失败: {data.get('message', '未知错误')}")
-                return []
-        else:
-            logger.error(f"获取API状态失败: {response.status_code}")
-            return []
+        """获取New API的所有渠道状态"""
+        try:
+            # 使用配置的路径和参数
+            base_url = self.config['new_api']['base_url']
+            search_path = self.config['new_api']['search_path']
+            search_params = self.config['new_api']['search_params']
             
-    except Exception as e:
-        logger.error(f"API请求异常: {e}")
-        return []
+            api_url = f"{base_url}{search_path}?{search_params}"
+            
+            headers = {
+                "accept": "application/json, text/plain, */*",
+                "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "cache-control": "no-store",
+                "new-api-user": "1",
+                "authorization": f"Bearer {self.config['new_api']['api_key']}",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            
+            logger.info(f"查询API URL: {api_url}")
+            response = requests.get(api_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success', False):
+                    return data.get('data', {}).get('items', [])
+                else:
+                    logger.error(f"API返回失败: {data.get('message', '未知错误')}")
+                    return []
+            else:
+                logger.error(f"获取API状态失败: {response.status_code}")
+                return []
                 
         except Exception as e:
             logger.error(f"API请求异常: {e}")

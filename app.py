@@ -41,6 +41,12 @@ class PanelManager:
                 },
                 "web_panel": {
                     "secret_key": os.getenv('SECRET_KEY', 'your-secret-key-change-this')
+                },
+                "new_api": {
+                    "base_url": os.getenv('NEW_API_BASE_URL', 'http://152.53.166.175:3058'),
+                    "api_key": os.getenv('NEW_API_TOKEN', ''),
+                    "search_path": os.getenv('NEW_API_SEARCH_PATH', '/api/channel/search'),
+                    "search_params": os.getenv('NEW_API_SEARCH_PARAMS', 'keyword=&group=vertex&model=&id_sort=true&tag_mode=false')
                 }
             }
         
@@ -154,6 +160,16 @@ class PanelManager:
         # 只返回有3个文件的完整组
         return {prefix: files for prefix, files in groups.items() if len(files) == 3}
     
+    def get_all_account_pools(self):
+        """获取所有账号池的信息"""
+        pools = {}
+        directories = ["fresh", "uploaded", "exhausted_300", "activated", "exhausted_100", "archive"]
+        
+        for directory in directories:
+            pools[directory] = self.get_account_groups(directory)
+        
+        return pools
+    
     def get_pending_activation_accounts(self):
         """获取待激活的账号详情"""
         groups = self.get_account_groups('exhausted_300')
@@ -208,6 +224,44 @@ class PanelManager:
             })
         
         return result
+    
+    def get_channel_data(self):
+        """获取渠道数据（从New API）"""
+        try:
+            import requests
+            
+            # 构造API请求URL
+            base_url = self.config['new_api']['base_url']
+            search_path = self.config['new_api']['search_path']
+            search_params = self.config['new_api']['search_params']
+            
+            api_url = f"{base_url}{search_path}?{search_params}"
+            
+            headers = {
+                "accept": "application/json, text/plain, */*",
+                "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "cache-control": "no-store",
+                "new-api-user": "1",
+                "authorization": f"Bearer {self.config['new_api']['api_key']}",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            
+            response = requests.get(api_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success', False):
+                    return data.get('data', {}).get('items', [])
+                else:
+                    logger.error(f"API返回失败: {data.get('message', '未知错误')}")
+                    return []
+            else:
+                logger.error(f"获取渠道数据失败: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"获取渠道数据异常: {e}")
+            return []
     
     def activate_account_group(self, account_prefix):
         """激活账号组"""
@@ -305,6 +359,8 @@ class PanelManager:
 
 panel_manager = PanelManager()
 
+# ===== 网页模板路由 =====
+
 @app.route('/health')
 def health_check():
     """健康检查端点"""
@@ -338,6 +394,22 @@ def exhausted_100():
     """100刀用完账号页面"""
     accounts = panel_manager.get_exhausted_100_accounts()
     return render_template('exhausted_100.html', accounts=accounts)
+
+@app.route('/account-pools')
+def account_pools():
+    """账号池管理页面"""
+    # 获取URL参数中的池类型筛选
+    pool_type = request.args.get('type', 'all')
+    return render_template('account_pools.html', pool_type=pool_type)
+
+@app.route('/channels')
+def channels():
+    """渠道管理页面"""
+    # 获取URL参数中的状态筛选
+    status_filter = request.args.get('status', 'all')
+    return render_template('channels.html', status_filter=status_filter)
+
+# ===== API 数据接口 =====
 
 @app.route('/api/activate', methods=['POST'])
 def activate_account():
@@ -378,6 +450,40 @@ def get_stats():
     """获取统计信息API"""
     stats = panel_manager.get_account_statistics()
     return jsonify(stats)
+
+@app.route('/api/account-pools')
+def get_account_pools():
+    """获取账号池数据API"""
+    try:
+        pools_data = panel_manager.get_all_account_pools()
+        return jsonify({
+            'success': True,
+            'data': pools_data,
+            'message': '获取账号池数据成功'
+        })
+    except Exception as e:
+        logger.error(f"获取账号池数据失败: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'获取账号池数据失败: {str(e)}'
+        }), 500
+
+@app.route('/api/channels')
+def get_channels():
+    """获取渠道数据API"""
+    try:
+        channels_data = panel_manager.get_channel_data()
+        return jsonify({
+            'success': True,
+            'data': channels_data,
+            'message': '获取渠道数据成功'
+        })
+    except Exception as e:
+        logger.error(f"获取渠道数据失败: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'获取渠道数据失败: {str(e)}'
+        }), 500
 
 @app.route('/api/upload-json', methods=['POST'])
 def upload_json():
@@ -553,6 +659,8 @@ def batch_upload_json():
     except Exception as e:
         logger.error(f"批量JSON文件上传异常: {e}")
         return jsonify({'success': False, 'message': f'批量上传失败: {str(e)}'}), 500
+
+# ===== 错误处理 =====
 
 @app.errorhandler(500)
 def internal_error(error):
