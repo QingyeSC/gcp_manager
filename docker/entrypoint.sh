@@ -21,7 +21,7 @@ if [ ! -z "${REDIS_HOST}" ]; then
     echo "✅ Redis已就绪"
 fi
 
-# 创建必要的目录
+# 创建必要的目录（确保存在，权限已在Dockerfile中设置）
 echo "📁 创建必要的目录..."
 mkdir -p /app/accounts/{fresh,uploaded,exhausted_300,activated,exhausted_100,archive}
 mkdir -p /app/logs
@@ -43,12 +43,6 @@ except Exception as e:
     exit(1)
 " || {
     echo "⚠️  数据库初始化失败，但继续启动..."
-}
-
-# 设置正确的文件权限（添加错误处理）
-echo "🔐 设置文件权限..."
-chown -R appuser:appuser /app/accounts /app/logs 2>/dev/null || {
-    echo "⚠️  权限设置失败，可能权限不足，继续启动..."
 }
 
 echo "🎯 启动应用服务..."

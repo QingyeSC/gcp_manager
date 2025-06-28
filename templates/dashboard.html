@@ -43,7 +43,10 @@
                         刷新
                     </button>
                     <span class="text-white text-sm" id="lastUpdate">
-                        最后更新: {{ moment().format('YYYY-MM-DD HH:mm:ss') }}
+                        最后更新: <span id="currentTime"></span>
+<script>
+document.getElementById('currentTime').textContent = new Date().toLocaleString('zh-CN');
+</script>
                     </span>
                 </div>
             </div>

@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     default-libmysqlclient-dev \
+    default-mysql-client \
+    redis-tools \
     pkg-config \
     curl \
     cron \
@@ -27,7 +29,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY . .
 
-# 创建必要的目录
+# 创建用户（但还不切换）
+RUN useradd -m -u 1000 appuser
+
+# 创建必要的目录并设置权限
 RUN mkdir -p /app/accounts/fresh \
              /app/accounts/uploaded \
              /app/accounts/exhausted_300 \
@@ -35,9 +40,13 @@ RUN mkdir -p /app/accounts/fresh \
              /app/accounts/exhausted_100 \
              /app/accounts/archive \
              /app/logs \
-             /app/config
+             /app/config \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /app/accounts \
+    && chmod -R 755 /app/logs \
+    && chmod -R 755 /app/config
 
-# 设置文件权限
+# 设置脚本权限
 RUN chmod +x /app/scripts/*.py \
     && chmod +x /app/app.py \
     && chmod +x /app/docker/entrypoint.sh
@@ -51,8 +60,7 @@ COPY docker/healthcheck.py /app/healthcheck.py
 # 暴露端口
 EXPOSE 5000
 
-# 创建非root用户
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# 最后切换到非root用户
 USER appuser
 
 # 健康检查

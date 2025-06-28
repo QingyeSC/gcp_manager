@@ -56,8 +56,8 @@ services:
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${MYSQL_DATABASE:-gcp_accounts}
-      DB_USER: ${MYSQL_USER:-gcp_user}
-      DB_PASSWORD: ${MYSQL_PASSWORD:-gcp_password_123}
+      DB_USER: root
+      DB_PASSWORD: rootpassword123
       
       # Redis配置
       REDIS_HOST: redis
