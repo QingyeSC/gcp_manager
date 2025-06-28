@@ -13,6 +13,7 @@ logs/*.log
 
 # 数据库数据
 mysql/data/
+mysql/logs/
 
 # 备份文件
 backups/
