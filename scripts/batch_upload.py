@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-批量上传脚本 - 基于用户原始代码改进
+批量上传脚本 - 基于用户原始代码改进，使用最新API格式
 功能：从账号池中选择并上传JSON文件到New API
 """
 
@@ -37,23 +37,24 @@ class BatchUploader:
         self.load_config(config_path)
         self.base_dir = Path("accounts")
         
-        # 沿用用户的固定payload配置
-        self.fixed_payload = {
+        # 使用最新版本的固定配置模板
+        self.channel_template = {
             "type": 41,
-            "openai_organization": "",
             "max_input_tokens": 0,
-            "base_url": "",
-            "other": "{\n  \"default\": \"us-central1\",\n  \"gemini-2.5-flash-lite-preview-06-17\": \"global\",\n  \"gemini-2.5-pro-exp-03-25\": \"global\",\n  \"gemini-2.5-pro-preview-06-05\": \"global\"\n}",
-            "model_mapping": "",
-            "status_code_mapping": "",
-            "models": "gemini-2.5-pro-exp-03-25,gemini-2.0-flash-001,gemini-2.5-flash-preview-04-17,gemini-2.5-flash-preview-05-20,gemini-2.5-pro-preview-03-25,gemini-2.5-pro-preview-05-06,gemini-2.5-pro-preview-06-05,gemini-2.5-flash,gemini-2.5-flash-lite-preview-06-17,gemini-2.5-pro",
+            "models": "gemini-2.5-pro,gemini-2.0-flash-001,gemini-2.5-flash-preview-04-17,gemini-2.5-flash-preview-05-20,gemini-2.5-pro-preview-03-25,gemini-2.5-pro-preview-05-06,gemini-2.5-pro-preview-06-05,gemini-2.5-flash,gemini-2.5-flash-lite-preview-06-17,gemini-2.5-flash-lite",
             "auto_ban": 1,
-            "test_model": "gemini-2.5-pro",
-            "groups": ["default", "vip", "svip"],
-            "priority": 1,
-            "weight": 1,
+            "groups": ["default", "svip", "vip", "vertex"],
+            "weight": 0,
+            "multi_key_mode": "random",  # 新增字段
+            "base_url": "",
+            "test_model": "gemini-2.5-flash-lite",  # 更新为更快速的模型
+            "model_mapping": "",
             "tag": "Vertex-vip",
-            "group": "default,vip,svip"
+            "status_code_mapping": "",
+            "other": "{\n  \"default\": \"us-central1\",\n  \"gemini-2.5-flash-lite-preview-06-17\": \"global\",\n  \"gemini-2.5-pro-exp-03-25\": \"global\",\n  \"gemini-2.5-pro-preview-06-05\": \"global\"\n}",
+            "priority": 1,
+            "setting": "{\"force_format\":false,\"thinking_to_content\":false,\"proxy\":\"\",\"pass_through_body_enabled\":false,\"system_prompt\":\"\"}",  # 新增设置字段
+            "group": "default,svip,vip,vertex"
         }
         
         self.max_retries = 3  # 最大重试次数
@@ -205,26 +206,72 @@ class BatchUploader:
             content = f.read()
         return json.dumps(json.loads(content))  # 标准JSON转义
     
+    def create_new_format_payload(self, name, key_content):
+        """创建新版本格式的payload"""
+        channel_config = self.channel_template.copy()
+        channel_config["name"] = name
+        channel_config["key"] = key_content
+        
+        # 新版本需要的完整结构
+        payload = {
+            "mode": "single",
+            "channel": channel_config
+        }
+        
+        return payload
+    
+    def validate_json_file(self, file_path):
+        """验证JSON文件格式是否正确"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                json.load(f)
+            return True, ""
+        except json.JSONDecodeError as e:
+            return False, f"JSON格式错误: {str(e)}"
+        except Exception as e:
+            return False, f"文件读取错误: {str(e)}"
+    
     def upload_channel(self, file_path):
         """上传单个频道文件"""
         name = file_path.stem
+        
+        # 首先验证JSON文件
+        is_valid, error_msg = self.validate_json_file(file_path)
+        if not is_valid:
+            return (name, file_path, False, f"JSON验证失败: {error_msg}")
+        
         try:
             key_content = self.escape_json_content(file_path)
-            payload = self.fixed_payload.copy()
-            payload["name"] = name
-            payload["key"] = key_content
+            payload = self.create_new_format_payload(name, key_content)
 
             for attempt in range(1, self.max_retries + 1):
                 try:
                     response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=15)
                     if response.status_code == 200:
-                        return (name, file_path, True, "")
+                        result = response.json()
+                        # 检查返回结果是否包含成功信息
+                        if result.get('success', True):  # 有些API成功时不返回success字段
+                            return (name, file_path, True, "")
+                        else:
+                            return (name, file_path, False, f"API返回失败: {result.get('message', '未知错误')}")
                     else:
                         if attempt < self.max_retries:
                             logger.warning(f"[重试] {name} 第{attempt}次失败，状态码{response.status_code}，准备重试...")
                             time.sleep(1)
                         else:
                             return (name, file_path, False, f"状态码 {response.status_code}，返回: {response.text}")
+                except requests.exceptions.Timeout:
+                    if attempt < self.max_retries:
+                        logger.warning(f"[重试] {name} 第{attempt}次超时，准备重试...")
+                        time.sleep(2)
+                    else:
+                        return (name, file_path, False, "请求超时")
+                except requests.exceptions.RequestException as e:
+                    if attempt < self.max_retries:
+                        logger.warning(f"[重试] {name} 第{attempt}次网络异常 {e}，准备重试...")
+                        time.sleep(1)
+                    else:
+                        return (name, file_path, False, f"网络异常: {str(e)}")
                 except Exception as e:
                     if attempt < self.max_retries:
                         logger.warning(f"[重试] {name} 第{attempt}次异常 {e}，准备重试...")
@@ -257,7 +304,7 @@ class BatchUploader:
     def run_upload(self, upload_count, source_dir):
         """执行上传任务"""
         logger.info("=" * 50)
-        logger.info("批量上传任务开始")
+        logger.info("批量上传任务开始（使用最新API格式）")
         logger.info(f"本次将上传 {upload_count} 个文件（{upload_count//3} 个项目组）")
         
         # 获取项目分组
@@ -287,22 +334,22 @@ class BatchUploader:
             logger.info(f"  - {file.name}")
         
         # 开始上传
-        logger.info("开始上传...")
+        logger.info("开始并发上传...")
         success_list = []
         fail_list = []
         success_files = []  # 用于记录成功上传的文件路径
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(self.upload_channel, file) for file in selected_files]
-            for future in as_completed(futures):
+            for i, future in enumerate(as_completed(futures), 1):
                 name, file_path, success, message = future.result()
                 if success:
                     success_list.append(name)
                     success_files.append(file_path)
-                    logger.info(f"[成功] {name}")
+                    logger.info(f"[{i}/{len(selected_files)}] [成功] {name}")
                 else:
                     fail_list.append((name, message))
-                    logger.error(f"[失败] {name}，原因：{message}")
+                    logger.error(f"[{i}/{len(selected_files)}] [失败] {name}，原因：{message}")
 
         # 移动上传成功的文件
         if success_files:
