@@ -29,10 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY . .
 
-# 创建用户（但还不切换）
-RUN useradd -m -u 1000 appuser
-
-# 创建必要的目录并设置权限
+# 创建必要的目录并设置权限（直接使用root）
 RUN mkdir -p /app/accounts/fresh \
              /app/accounts/uploaded \
              /app/accounts/exhausted_300 \
@@ -41,7 +38,6 @@ RUN mkdir -p /app/accounts/fresh \
              /app/accounts/archive \
              /app/logs \
              /app/config \
-    && chown -R appuser:appuser /app \
     && chmod -R 755 /app/accounts \
     && chmod -R 755 /app/logs \
     && chmod -R 755 /app/config
@@ -60,12 +56,9 @@ COPY docker/healthcheck.py /app/healthcheck.py
 # 暴露端口
 EXPOSE 5000
 
-# 最后切换到非root用户
-USER appuser
-
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python /app/healthcheck.py
 
-# 使用supervisor启动多个服务
+# 直接使用root用户运行
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
