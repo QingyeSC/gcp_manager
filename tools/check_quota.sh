@@ -6,8 +6,8 @@ set -euo pipefail
 TARGET_BILLING_ACCOUNT="${TARGET_BILLING_ACCOUNT:-}"   # 指定账单（可选）
 TARGET_PROJECT_ID="${TARGET_PROJECT_ID:-}"             # 指定项目（可选）
 MODEL="${MODEL:-gemini-2.5-flash}"                     # 测试模型
-RPM="${RPM:-300}"                                      # 每分钟请求数
-DURATION_SEC="${DURATION_SEC:-60}"                     # 压测时长（秒）
+RPM="${RPM:-120}"                                      # 每分钟请求数
+DURATION_SEC="${DURATION_SEC:-30}"                     # 压测时长（秒）
 CONCURRENCY="${CONCURRENCY:-20}"                       # 并发上限
 BODY='{"contents":[{"role":"user","parts":[{"text":"ping"}]}],"generationConfig":{"maxOutputTokens":16,"temperature":0.2}}'
 
