@@ -127,18 +127,21 @@ function unlink_project {
 
 # 函数：创建单个项目
 function create_project {
-    local project_id=$1
+    local project_name=$1
     
-    if retry_command $MAX_RETRIES $BASE_RETRY_DELAY \
-        "gcloud projects create '$project_id' --name='$project_id' --quiet"; then
-        echo "✓ 项目 $project_id 创建成功"
-        echo "$project_id" >> "$PROGRESS_DIR/created_projects"
-    elif gcloud projects describe "$project_id" &> /dev/null; then
-        echo "ℹ️  项目 $project_id 已存在，将继续处理"
-        echo "$project_id" >> "$PROGRESS_DIR/created_projects"
+    echo "🏗️  正在创建项目: $project_name"
+    
+    # 使用GCP自动生成项目ID，获取生成的项目ID
+    local project_id
+    project_id=$(gcloud projects create --name="$project_name" --format="value(projectId)" --quiet 2>/dev/null)
+    local create_result=$?
+    
+    if [ $create_result -eq 0 ] && [ ! -z "$project_id" ]; then
+        echo "✓ 项目 '$project_name' 创建成功，自动生成ID: $project_id"
+        echo "$project_id:$project_name" >> "$PROGRESS_DIR/created_projects"
     else
-        echo "❌ 项目 $project_id 创建失败"
-        echo "$project_id" >> "$PROGRESS_DIR/failed_projects"
+        echo "❌ 项目 '$project_name' 创建失败"
+        echo "$project_name" >> "$PROGRESS_DIR/failed_projects"
     fi
 }
 
@@ -227,6 +230,7 @@ function create_service_account {
 # 函数：下载服务账号密钥（不上传，等待批量处理）
 function download_keys_for_project {
     local project_id=$1
+    local project_name=$2
     
     echo "🔑 正在下载项目 $project_id 的服务账号密钥..."
     
@@ -239,8 +243,8 @@ function download_keys_for_project {
     
     echo "  处理服务账号: $sa_name"
     
-    # 下载项目密钥文件
-    local key_filename="${project_id}.json"
+    # 下载项目密钥文件（使用项目名称作为文件名）
+    local key_filename="${project_name}.json"
     local downloaded_count=0
     
     # 下载密钥文件
@@ -252,13 +256,14 @@ function download_keys_for_project {
         echo "    ❌ 密钥文件 $key_filename 下载失败"
     fi
     
-    echo "$project_id:$downloaded_count:0" >> "$PROGRESS_DIR/key_results"
-    echo "  📊 项目 $project_id 密钥下载完成 ($downloaded_count/1)"
+    echo "$project_id:$project_name:$downloaded_count:0" >> "$PROGRESS_DIR/key_results"
+    echo "  📊 项目 $project_id ($project_name) 密钥下载完成 ($downloaded_count/1)"
 }
 
 # 函数：上传JSON文件到管理系统
 function upload_project_files {
     local project_id=$1
+    local project_name=$2
     
     if [ -z "$UPLOAD_API_URL" ]; then
         echo "    ⚠️  未配置上传API地址，跳过上传"
@@ -266,7 +271,7 @@ function upload_project_files {
     fi
     
     # 检查文件是否存在
-    local filename="${project_id}.json"
+    local filename="${project_name}.json"
     if [ ! -f "$filename" ]; then
         echo "    ⚠️  项目 $project_id 的文件 $filename 不存在，跳过上传"
         return 1
@@ -314,6 +319,8 @@ echo "项目创建数量: $PROJECT_COUNT"
 echo "每项目服务账号数: 1"
 echo "最大并发数: $MAX_PARALLEL_JOBS"
 echo "重试次数: $MAX_RETRIES"
+echo "项目ID生成: 由GCP自动生成（随机唯一ID）"
+echo "项目名称: 使用邮箱前缀构建有意义名称"
 if [ ! -z "$UPLOAD_API_URL" ]; then
     echo "JSON上传地址: $UPLOAD_API_URL"
 else
@@ -449,20 +456,17 @@ show_separator
 
 echo "🏗️  第四步：并发创建 $PROJECT_COUNT 个新项目"
 
-# 生成项目ID前缀
-project_prefix="${PROJECT_PREFIX_LETTER}-${prefix_chars}"
-if [ ${#project_prefix} -gt 24 ]; then
-    project_prefix=${project_prefix:0:24}
-fi
+# 生成项目名称前缀
+project_name_prefix="${PROJECT_PREFIX_LETTER}-${prefix_chars}-${PROJECT_SUFFIX}"
 
-echo "使用的项目ID前缀: $project_prefix"
+echo "使用的项目名称前缀: $project_name_prefix"
 
 # 准备并发创建项目
 create_jobs=()
 for i in $(seq 1 $PROJECT_COUNT); do
     formatted_num=$(printf "%02d" $i)
-    project_id="${project_prefix}-${PROJECT_SUFFIX}-${formatted_num}"
-    create_jobs+=("create_project '$project_id'")
+    project_name="${project_name_prefix}-${formatted_num}"
+    create_jobs+=("create_project '$project_name'")
 done
 
 echo "🚀 开始并发创建项目..."
@@ -470,9 +474,11 @@ run_parallel $MAX_PARALLEL_JOBS "${create_jobs[@]}"
 
 # 收集创建成功的项目
 created_projects=()
+project_names=()
 if [ -f "$PROGRESS_DIR/created_projects" ]; then
-    while read -r project_id; do
+    while IFS=':' read -r project_id project_name; do
         created_projects+=("$project_id")
+        project_names+=("$project_name")
     done < "$PROGRESS_DIR/created_projects"
 fi
 
@@ -596,8 +602,10 @@ if [ ${#created_projects[@]} -eq 0 ]; then
 else
     # 准备密钥处理任务
     key_jobs=()
-    for project_id in "${created_projects[@]}"; do
-        key_jobs+=("download_keys_for_project '$project_id'")
+    for i in "${!created_projects[@]}"; do
+        project_id=${created_projects[$i]}
+        project_name=${project_names[$i]}
+        key_jobs+=("download_keys_for_project '$project_id' '$project_name'")
     done
     
     echo "🚀 开始并发处理密钥文件..."
@@ -608,8 +616,8 @@ else
     total_uploaded=0
     if [ -f "$PROGRESS_DIR/key_results" ]; then
         echo "📊 密钥处理统计:"
-        while IFS=':' read -r project_id downloaded uploaded; do
-            echo "  - $project_id: 下载 $downloaded, 上传 $uploaded"
+        while IFS=':' read -r project_id project_name downloaded uploaded; do
+            echo "  - $project_name ($project_id): 下载 $downloaded, 上传 $uploaded"
             total_downloaded=$((total_downloaded + downloaded))
             total_uploaded=$((total_uploaded + uploaded))
         done < "$PROGRESS_DIR/key_results"
@@ -625,18 +633,20 @@ else
         uploaded_projects=0
         failed_uploads=0
         
-        for project_id in "${created_projects[@]}"; do
-            if upload_project_files "$project_id"; then
+        for i in "${!created_projects[@]}"; do
+            project_id=${created_projects[$i]}
+            project_name=${project_names[$i]}
+            if upload_project_files "$project_id" "$project_name"; then
                 ((uploaded_projects++))
                 # 更新统计
                 if [ -f "$PROGRESS_DIR/key_results" ]; then
-                    # 更新上传状态：project_id:downloaded:uploaded
-                    sed -i "s/${project_id}:\([0-9]*\):0/${project_id}:\1:1/" "$PROGRESS_DIR/key_results"
+                    # 更新上传状态：project_id:project_name:downloaded:uploaded
+                    sed -i "s/${project_id}:${project_name}:\([0-9]*\):0/${project_id}:${project_name}:\1:1/" "$PROGRESS_DIR/key_results"
                 fi
             else
                 ((failed_uploads++))
                 # 记录失败的文件
-                echo "${project_id}.json" >> "$PROGRESS_DIR/local_keys"
+                echo "${project_name}.json" >> "$PROGRESS_DIR/local_keys"
             fi
         done
         
@@ -675,12 +685,13 @@ echo "  - 成功创建: ${#created_projects[@]} 个项目"
 if [ ${#created_projects[@]} -gt 0 ]; then
     for i in "${!created_projects[@]}"; do
         project_id=${created_projects[$i]}
+        project_name=${project_names[$i]}
         billing_index=$((i % ${#billing_accounts_array[@]}))
         if [ ${#billing_accounts_array[@]} -gt 0 ]; then
             billing_name=${billing_names_array[$billing_index]}
-            echo "    $((i+1)). $project_id (绑定账单: $billing_name)"
+            echo "    $((i+1)). $project_name (ID: $project_id) (绑定账单: $billing_name)"
         else
-            echo "    $((i+1)). $project_id (未绑定账单)"
+            echo "    $((i+1)). $project_name (ID: $project_id) (未绑定账单)"
         fi
     done
 fi
@@ -707,7 +718,7 @@ echo "🔑 密钥文件处理结果:"
 if [ -f "$PROGRESS_DIR/key_results" ]; then
     total_downloaded=0
     total_uploaded=0
-    while IFS=':' read -r project_id downloaded uploaded; do
+    while IFS=':' read -r project_id project_name downloaded uploaded; do
         total_downloaded=$((total_downloaded + downloaded))
         total_uploaded=$((total_uploaded + uploaded))
     done < "$PROGRESS_DIR/key_results"
@@ -742,7 +753,9 @@ else
 fi
 echo ""
 echo "💡 使用说明："
-echo "  - 密钥文件命名格式：项目ID.json"
+echo "  - 项目ID: 由GCP自动生成的随机唯一标识符"
+echo "  - 项目名称: 基于登录邮箱前缀构建的有意义名称"
+echo "  - 密钥文件命名格式：项目名称.json（规范命名）"
 if [ ! -z "$UPLOAD_API_URL" ]; then
     echo "  - 成功上传的密钥文件已自动导入管理系统"
     echo "  - 上传失败的密钥文件保留在当前目录"
