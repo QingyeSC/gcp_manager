@@ -342,7 +342,7 @@ show_separator
 #           第三步：获取所有项目                      #
 #####################################################
 
-echo "📋 第三步：获取所有项目（跳过账单筛选，直接处理所有项目）"
+echo "📋 第三步：获取匹配的项目（只处理 proj-*-vip-* 格式的项目）"
 
 # 获取所有项目
 all_projects=$(gcloud projects list --format="value(PROJECT_ID,NAME)")
@@ -351,23 +351,28 @@ if [ -z "$all_projects" ]; then
     error_exit "未找到任何项目。"
 fi
 
-# 直接使用所有项目，不进行筛选
+# 筛选符合 proj-*-vip-* 格式的项目
 unbilled_projects=()
 unbilled_project_names=()
 
-echo "正在收集所有项目..."
+echo "正在筛选符合 proj-*-vip-* 格式的项目..."
 while IFS=$'\t' read -r project_id project_name; do
     if [ ! -z "$project_id" ]; then
-        unbilled_projects+=("$project_id")
-        unbilled_project_names+=("$project_name")
-        echo "  📌 $project_id ($project_name) - 将处理此项目"
+        # 使用正则表达式匹配 proj-*-vip-* 格式
+        if [[ "$project_id" =~ ^proj-.*-vip-.* ]]; then
+            unbilled_projects+=("$project_id")
+            unbilled_project_names+=("$project_name")
+            echo "  ✅ $project_id ($project_name) - 匹配格式，将处理此项目"
+        else
+            echo "  ⏭️  $project_id ($project_name) - 不匹配格式，跳过"
+        fi
     fi
 done <<< "$all_projects"
 
 echo "待处理的项目数量: ${#unbilled_projects[@]}"
 
 if [ ${#unbilled_projects[@]} -eq 0 ]; then
-    echo "❌ 未找到任何项目"
+    echo "❌ 未找到任何符合 proj-*-vip-* 格式的项目"
     exit 1
 fi
 
