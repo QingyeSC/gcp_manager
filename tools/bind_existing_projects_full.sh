@@ -12,7 +12,7 @@
 MAX_PARALLEL_JOBS=50
 
 # 重试配置
-MAX_RETRIES=2
+MAX_RETRIES=1
 BASE_RETRY_DELAY=3
 
 # JSON上传配置
@@ -342,7 +342,7 @@ show_separator
 #           第三步：获取所有项目                      #
 #####################################################
 
-echo "📋 第三步：获取匹配的项目（只处理 proj-*-vip-* 格式的项目）"
+echo "📋 第三步：获取匹配的项目（只处理 proj-* 开头的项目）"
 
 # 获取所有项目
 all_projects=$(gcloud projects list --format="value(PROJECT_ID,NAME)")
@@ -351,15 +351,15 @@ if [ -z "$all_projects" ]; then
     error_exit "未找到任何项目。"
 fi
 
-# 筛选符合 proj-*-vip-* 格式的项目
+# 筛选符合 proj-* 开头的项目
 unbilled_projects=()
 unbilled_project_names=()
 
-echo "正在筛选符合 proj-*-vip-* 格式的项目..."
+echo "正在筛选符合 proj-* 开头的项目..."
 while IFS=$'\t' read -r project_id project_name; do
     if [ ! -z "$project_id" ]; then
-        # 使用正则表达式匹配 proj-*-vip-* 格式
-        if [[ "$project_id" =~ ^proj-.*-vip-.* ]]; then
+        # 使用正则表达式匹配 proj-* 开头的项目
+        if [[ "$project_id" =~ ^proj-.* ]]; then
             unbilled_projects+=("$project_id")
             unbilled_project_names+=("$project_name")
             echo "  ✅ $project_id ($project_name) - 匹配格式，将处理此项目"
@@ -372,7 +372,7 @@ done <<< "$all_projects"
 echo "待处理的项目数量: ${#unbilled_projects[@]}"
 
 if [ ${#unbilled_projects[@]} -eq 0 ]; then
-    echo "❌ 未找到任何符合 proj-*-vip-* 格式的项目"
+    echo "❌ 未找到任何符合 proj-* 开头的项目"
     exit 1
 fi
 
