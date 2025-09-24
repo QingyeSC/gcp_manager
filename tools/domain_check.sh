@@ -1,3 +1,4 @@
+
 #!/bin/bash
 set -euo pipefail
 
@@ -27,9 +28,22 @@ if [ -z "$PROJECT_ID" ]; then
   PROJECT_ID="auto-proj-$(date +%s)"
   echo "未找到项目，正在创建新项目: $PROJECT_ID"
   gcloud projects create "$PROJECT_ID" --name="Auto Domain Project"
+  echo "绑定账单账号到新项目..."
   gcloud beta billing projects link "$PROJECT_ID" --billing-account="$BILLING_ACCOUNT"
 else
   echo "找到项目: $PROJECT_ID"
+
+  # 检查项目是否已绑定账单账号
+  echo "检查项目账单状态..."
+  CURRENT_BILLING=$(gcloud billing projects describe "$PROJECT_ID" --format="value(billingAccountName)" 2>/dev/null | sed 's|.*/||')
+
+  if [ -z "$CURRENT_BILLING" ] || [ "$CURRENT_BILLING" = "" ]; then
+    echo "⚠️ 项目未绑定账单账号，正在绑定..."
+    gcloud beta billing projects link "$PROJECT_ID" --billing-account="$BILLING_ACCOUNT"
+    echo "✅ 已成功绑定账单账号: $BILLING_ACCOUNT"
+  else
+    echo "✅ 项目已绑定账单账号: $CURRENT_BILLING"
+  fi
 fi
 echo ""
 
