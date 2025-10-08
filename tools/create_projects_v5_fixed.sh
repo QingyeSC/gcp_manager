@@ -232,37 +232,51 @@ create_projects() {
     log_success "项目创建完成！成功: $TOTAL_CREATED / $PROJECT_COUNT"
 }
 
-# 并发授权函数
+# 并发授权函数（带重试）
 grant_permission_job() {
     local project_id=$1
     local sa_email=$2
+    local max_retries=3
+    local retry=0
 
-    if gcloud projects add-iam-policy-binding "$project_id" \
-        --member="serviceAccount:$sa_email" \
-        --role="roles/owner" \
-        --quiet >/dev/null 2>&1; then
-        echo -n "."
-        return 0
-    else
-        echo -n "!"
-        return 1
-    fi
+    while [ $retry -lt $max_retries ]; do
+        if gcloud projects add-iam-policy-binding "$project_id" \
+            --member="serviceAccount:$sa_email" \
+            --role="roles/owner" \
+            --quiet >/dev/null 2>&1; then
+            echo -n "."
+            return 0
+        fi
+
+        ((retry++))
+        [ $retry -lt $max_retries ] && sleep 2
+    done
+
+    echo -n "!"
+    return 1
 }
 
-# 并发启用API函数
+# 并发启用API函数（带重试）
 enable_api_job() {
     local api_name=$1
     local project_id=$2
+    local max_retries=3
+    local retry=0
 
-    if gcloud services enable "$api_name" \
-        --project="$project_id" \
-        --quiet >/dev/null 2>&1; then
-        echo -n "."
-        return 0
-    else
-        echo -n "!"
-        return 1
-    fi
+    while [ $retry -lt $max_retries ]; do
+        if gcloud services enable "$api_name" \
+            --project="$project_id" \
+            --quiet >/dev/null 2>&1; then
+            echo -n "."
+            return 0
+        fi
+
+        ((retry++))
+        [ $retry -lt $max_retries ] && sleep 3
+    done
+
+    echo -n "!"
+    return 1
 }
 
 # 解绑默认项目的账单
