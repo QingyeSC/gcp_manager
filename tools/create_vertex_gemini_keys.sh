@@ -235,7 +235,7 @@ process_project_for_key() {
 
     log_info "[$project_id] 创建 API Key: $api_key_name"
     # 创建带限制的API Key：绑定服务账号、IP限制、API限制
-    restrictions="--allowed-ips=152.53.169.193 --api-target=service=aiplatform.googleapis.com"
+    restrictions="--api-target=service=aiplatform.googleapis.com"
 
     if operation=$(gcloud alpha services api-keys create \
         --display-name="$api_key_name" \
