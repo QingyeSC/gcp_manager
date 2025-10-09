@@ -5,7 +5,7 @@
 # 不使用set -e，避免并发任务中的错误导致主脚本退出
 # set -e
 
-PROJECT_COUNT=10
+PROJECT_COUNT=5
 TIMESTAMP=$(date +%s)
 LOG_FILE="gemini_keys_${TIMESTAMP}.log"
 MAX_BILLING_CONCURRENCY=10
