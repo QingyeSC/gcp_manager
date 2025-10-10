@@ -146,11 +146,13 @@ process_email_prefix() {
     echo "$clean_prefix"
 }
 
-# 创建项目并发函数
+# 创建项目并发函数（带重试）
 create_project_job() {
     local index=$1
     local prefix=$2
     local suffix=$3
+    local max_retries=3
+    local retry=0
 
     # 格式化索引
     local formatted_index=$(printf "%02d" "$index")
@@ -159,18 +161,24 @@ create_project_job() {
     local project_id="${project_name}-${suffix}"
     local display_name="${prefix} SVIP ${formatted_index}"
 
-    # 创建项目
-    if gcloud projects create "$project_id" \
-        --name="$display_name" \
-        --quiet >/dev/null 2>&1; then
+    # 创建项目（带重试）
+    while [ $retry -lt $max_retries ]; do
+        if gcloud projects create "$project_id" \
+            --name="$display_name" \
+            --quiet >/dev/null 2>&1; then
 
-        echo "$project_name|$project_id|$display_name|created" >> "$PROJECTS_INFO_FILE"
-        echo "created" >> "$PROGRESS_FILE"
-        return 0
-    else
-        echo "failed" >> "$PROGRESS_FILE"
-        return 1
-    fi
+            echo "$project_name|$project_id|$display_name|created" >> "$PROJECTS_INFO_FILE"
+            echo "created" >> "$PROGRESS_FILE"
+            return 0
+        fi
+
+        ((retry++))
+        [ $retry -lt $max_retries ] && sleep 2
+    done
+
+    # 所有重试失败
+    echo "failed" >> "$PROGRESS_FILE"
+    return 1
 }
 
 # 批量创建项目
