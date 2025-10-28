@@ -4,7 +4,7 @@
 # 优化版：实时进度显示、并发处理、自动上传
 
 # 默认配置
-PROJECT_COUNT=50
+PROJECT_COUNT=25
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 LOG_FILE="create_projects_v5_${TIMESTAMP}.log"
 
