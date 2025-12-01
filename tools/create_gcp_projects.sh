@@ -5,7 +5,7 @@
 #####################################################
 
 # 要创建的项目数量（可以通过命令行参数修改）
-PROJECT_COUNT=${1:-3}
+PROJECT_COUNT=${1:-5}
 
 # 项目名前缀
 PROJECT_PREFIX_LETTER="proj"
@@ -38,7 +38,6 @@ APIS_TO_ENABLE=(
 # 需要授予服务账号的角色
 SERVICE_ACCOUNT_ROLES=(
   "roles/aiplatform.user"
-  "roles/iam.serviceAccountTokenCreator"
 )
 
 # 临时文件用于跟踪进度
