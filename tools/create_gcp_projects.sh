@@ -5,7 +5,7 @@
 #####################################################
 
 # 要创建的项目数量（可以通过命令行参数修改）
-PROJECT_COUNT=${1:-5}
+PROJECT_COUNT=${1:-3}
 
 # 项目名前缀
 PROJECT_PREFIX_LETTER="proj"
@@ -33,10 +33,16 @@ UPLOAD_API_TOKEN="${UPLOAD_API_TOKEN:-}"
 # 需要开启的API列表
 APIS_TO_ENABLE=(
   "aiplatform.googleapis.com"
+  "iam.googleapis.com"
+  "iamcredentials.googleapis.com"
+  "cloudresourcemanager.googleapis.com"
 )
 
 # 需要授予服务账号的角色
 SERVICE_ACCOUNT_ROLES=(
+  "roles/aiplatform.admin"
+  "roles/iam.serviceAccountUser"
+  "roles/iam.serviceAccountTokenCreator"
   "roles/aiplatform.user"
 )
 
@@ -316,7 +322,7 @@ function upload_project_files {
 echo "===== GCP项目批量创建脚本（标准版）====="
 echo "项目创建数量: $PROJECT_COUNT"
 echo "每项目服务账号数: 1"
-echo "最大并发数: $MAX_PARALLEL_JOBS"
+echo "解绑阶段最大并发数: $MAX_PARALLEL_JOBS"
 echo "重试次数: $MAX_RETRIES"
 echo "项目ID生成: 由GCP自动生成（随机唯一ID）"
 echo "项目名称: 使用邮箱前缀构建有意义名称"
@@ -453,23 +459,20 @@ show_separator
 #           第四步：新建指定数量的项目                 #
 #####################################################
 
-echo "🏗️  第四步：并发创建 $PROJECT_COUNT 个新项目"
+echo "🏗️  第四步：顺序创建 $PROJECT_COUNT 个新项目"
 
 # 生成项目名称前缀
 project_name_prefix="${PROJECT_PREFIX_LETTER}-${prefix_chars}-${PROJECT_SUFFIX}"
 
 echo "使用的项目名称前缀: $project_name_prefix"
 
-# 准备并发创建项目
-create_jobs=()
+# 顺序创建项目
+echo "🚀 开始顺序创建项目..."
 for i in $(seq 1 $PROJECT_COUNT); do
     formatted_num=$(printf "%02d" $i)
     project_name="${project_name_prefix}-${formatted_num}"
-    create_jobs+=("create_project '$project_name'")
+    create_project "$project_name"
 done
-
-echo "🚀 开始并发创建项目..."
-run_parallel $MAX_PARALLEL_JOBS "${create_jobs[@]}"
 
 # 收集创建成功的项目
 created_projects=()
@@ -494,7 +497,7 @@ show_separator
 #           第五步：为项目绑定账单                     #
 #####################################################
 
-echo "💰 第五步：为项目绑定账单"
+echo "💰 第五步：为项目绑定账单（顺序处理）"
 
 billing_count=${#billing_accounts_array[@]}
 if [ $billing_count -eq 0 ]; then
@@ -502,8 +505,7 @@ if [ $billing_count -eq 0 ]; then
 elif [ ${#created_projects[@]} -eq 0 ]; then
     echo "⚠️  警告: 没有成功创建的项目，跳过账单绑定"
 else
-    # 准备账单绑定任务
-    billing_jobs=()
+    echo "🚀 开始顺序绑定账单..."
     for i in "${!created_projects[@]}"; do
         project_id=${created_projects[$i]}
         # 循环使用账单账号
@@ -511,11 +513,8 @@ else
         billing_account=${billing_accounts_array[$billing_index]}
         billing_name=${billing_names_array[$billing_index]}
         
-        billing_jobs+=("link_billing '$project_id' '$billing_account' '$billing_name'")
+        link_billing "$project_id" "$billing_account" "$billing_name"
     done
-    
-    echo "🚀 开始并发绑定账单..."
-    run_parallel $MAX_PARALLEL_JOBS "${billing_jobs[@]}"
     
     # 统计绑定结果
     linked_count=0
@@ -536,19 +535,15 @@ show_separator
 #           第六步：为每个项目启用必要的API            #
 #####################################################
 
-echo "🔧 第六步：为每个项目启用必要的API服务（并发处理）"
+echo "🔧 第六步：为每个项目启用必要的API服务（顺序处理）"
 
 if [ ${#created_projects[@]} -eq 0 ]; then
     echo "⚠️  警告: 没有可用的项目，跳过API启用"
 else
-    # 准备API启用任务
-    api_jobs=()
+    echo "🚀 开始顺序启用API服务..."
     for project_id in "${created_projects[@]}"; do
-        api_jobs+=("enable_apis '$project_id'")
+        enable_apis "$project_id"
     done
-    
-    echo "🚀 开始并发启用API服务..."
-    run_parallel $MAX_PARALLEL_JOBS "${api_jobs[@]}"
     
     # 统计API启用结果
     if [ -f "$PROGRESS_DIR/enabled_apis" ]; then
@@ -565,19 +560,15 @@ show_separator
 #     第七步：创建服务账号并授予Vertex AI权限          #
 #####################################################
 
-echo "👤 第七步：为每个项目创建服务账号并授予权限（并发处理）"
+echo "👤 第七步：为每个项目创建服务账号并授予权限（顺序处理）"
 
 if [ ${#created_projects[@]} -eq 0 ]; then
     echo "⚠️  警告: 没有可用的项目，跳过服务账号创建"
 else
-    # 准备服务账号创建任务
-    sa_jobs=()
+    echo "🚀 开始顺序创建服务账号..."
     for project_id in "${created_projects[@]}"; do
-        sa_jobs+=("create_service_account '$project_id' '$prefix_chars'")
+        create_service_account "$project_id" "$prefix_chars"
     done
-    
-    echo "🚀 开始并发创建服务账号..."
-    run_parallel $MAX_PARALLEL_JOBS "${sa_jobs[@]}"
     
     # 统计服务账号创建结果
     sa_success_count=0
@@ -594,21 +585,17 @@ show_separator
 #       第八步：下载服务账号密钥并上传到管理系统       #
 #####################################################
 
-echo "🔑 第八步：下载服务账号密钥并上传到管理系统（并发处理）"
+echo "🔑 第八步：下载服务账号密钥并上传到管理系统（顺序处理）"
 
 if [ ${#created_projects[@]} -eq 0 ]; then
     echo "⚠️  警告: 没有可用的项目，跳过密钥处理"
 else
-    # 准备密钥处理任务
-    key_jobs=()
+    echo "🚀 开始顺序处理密钥文件..."
     for i in "${!created_projects[@]}"; do
         project_id=${created_projects[$i]}
         project_name=${project_names[$i]}
-        key_jobs+=("download_keys_for_project '$project_id' '$project_name'")
+        download_keys_for_project "$project_id" "$project_name"
     done
-    
-    echo "🚀 开始并发处理密钥文件..."
-    run_parallel $MAX_PARALLEL_JOBS "${key_jobs[@]}"
     
     # 统计密钥处理结果
     total_downloaded=0
@@ -672,7 +659,7 @@ show_separator
 echo "===== 脚本执行完成总结 ====="
 echo ""
 echo "📧 登录邮箱: $current_account"
-echo "⏱️  执行配置: 最大并发 $MAX_PARALLEL_JOBS, 重试次数 $MAX_RETRIES"
+echo "⏱️  执行配置: 重试次数 $MAX_RETRIES"
 echo ""
 echo "💳 使用的账单账号:"
 for i in "${!billing_accounts_array[@]}"; do
