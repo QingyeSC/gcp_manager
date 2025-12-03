@@ -30,13 +30,32 @@ BASE_RETRY_DELAY=5
 UPLOAD_API_URL="${UPLOAD_API_URL:-http://159.195.14.217:5001/api/upload-files}"
 UPLOAD_API_TOKEN="${UPLOAD_API_TOKEN:-}"
 
-# 需要开启的API列表
-APIS_TO_ENABLE=(
+# 必须启用的API列表
+REQUIRED_APIS=(
   "aiplatform.googleapis.com"
+  "generativelanguage.googleapis.com"
   "iam.googleapis.com"
   "iamcredentials.googleapis.com"
   "cloudresourcemanager.googleapis.com"
+  "cloudbilling.googleapis.com"
+  "cloudaicompanion.googleapis.com"
 )
+
+# 附加API列表（每个项目随机启用若干个）
+OPTIONAL_APIS=(
+  "domains.googleapis.com"
+  "run.googleapis.com"
+  "compute.googleapis.com"
+  "storage.googleapis.com"
+  "serviceusage.googleapis.com"
+  "monitoring.googleapis.com"
+  "logging.googleapis.com"
+  "vpcaccess.googleapis.com"
+  "networkservices.googleapis.com"
+)
+
+# 每个项目随机启用的附加API数量
+OPTIONAL_APIS_PER_PROJECT=2
 
 # 需要授予服务账号的角色
 SERVICE_ACCOUNT_ROLES=(
@@ -175,8 +194,16 @@ function enable_apis {
     # 设置当前项目
     gcloud config set project "$project_id" --quiet
     
+    # 构建本项目需要启用的API列表（必选 + 随机附加）
+    local apis=("${REQUIRED_APIS[@]}")
+    if [ ${#OPTIONAL_APIS[@]} -gt 0 ] && [ $OPTIONAL_APIS_PER_PROJECT -gt 0 ]; then
+        mapfile -t selected_optional < <(printf "%s\n" "${OPTIONAL_APIS[@]}" | shuf -n "$OPTIONAL_APIS_PER_PROJECT")
+        apis+=("${selected_optional[@]}")
+        echo "  本次附加API: ${selected_optional[*]}"
+    fi
+
     local success_count=0
-    for api in "${APIS_TO_ENABLE[@]}"; do
+    for api in "${apis[@]}"; do
         if retry_command $MAX_RETRIES $((BASE_RETRY_DELAY * 2)) \
             "gcloud services enable '$api' --project='$project_id' --quiet"; then
             echo "  ✓ $api 启用成功"
@@ -186,8 +213,9 @@ function enable_apis {
         fi
     done
     
-    echo "$project_id:$success_count/${#APIS_TO_ENABLE[@]}" >> "$PROGRESS_DIR/enabled_apis"
-    echo "📋 项目 $project_id API启用完成 ($success_count/${#APIS_TO_ENABLE[@]})"
+    local total_apis=${#apis[@]}
+    echo "$project_id:$success_count/$total_apis" >> "$PROGRESS_DIR/enabled_apis"
+    echo "📋 项目 $project_id API启用完成 ($success_count/$total_apis)"
 }
 
 # 函数：创建单个服务账号
@@ -722,9 +750,10 @@ echo "  - 实际成功数量: ${#created_projects[@]}"
 echo "  - 成功率: $(( ${#created_projects[@]} * 100 / PROJECT_COUNT ))%"
 
 if [ -f "$PROGRESS_DIR/enabled_apis" ]; then
-    total_apis=$(( ${#created_projects[@]} * ${#APIS_TO_ENABLE[@]} ))
-    enabled_apis=$(awk -F: '{split($2,a,"/"); sum+=a[1]} END {print sum+0}' "$PROGRESS_DIR/enabled_apis")
-    echo "  - API启用成功率: $(( enabled_apis * 100 / total_apis ))% ($enabled_apis/$total_apis)"
+    read enabled_apis total_apis <<< "$(awk -F '[:/]' '{s+=$2; t+=$3} END {print s+0, t+0}' "$PROGRESS_DIR/enabled_apis")"
+    if [ "$total_apis" -gt 0 ]; then
+        echo "  - API启用成功率: $(( enabled_apis * 100 / total_apis ))% ($enabled_apis/$total_apis)"
+    fi
 fi
 
 echo ""
